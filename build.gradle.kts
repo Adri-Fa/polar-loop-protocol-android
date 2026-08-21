@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library") version "8.13.2"
     id("org.jetbrains.kotlin.android") version "2.3.21"
+    `maven-publish`
 }
 
 android {
@@ -19,6 +20,26 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // AGP doesn't publish a variant by default -- JitPack (and any Maven consumer) needs this
+    // opt-in to get a `components["release"]` to publish below.
+    publishing {
+        singleVariant("release")
+    }
+}
+
+// JitPack builds by running a Maven-publish task and looking for the resulting artifact --
+// without this block there's no publication at all, and the build fails almost instantly.
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "com.github.Adri-Fa"
+                artifactId = "polar-loop-protocol-android"
+            }
+        }
     }
 }
 
