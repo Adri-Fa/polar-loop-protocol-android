@@ -3,7 +3,6 @@ package com.polarloopdebugger.protocol
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 
 class PftpCommandsTest {
@@ -87,11 +86,11 @@ class PftpCommandsTest {
                 method.parameterTypes.contentEquals(arrayOf(String::class.java)) ->
                     method.invoke(null, "/SOME/TEST/PATH.BIN") as ByteArray
                 method.parameterTypes.isEmpty() -> method.invoke(null) as ByteArray
-                else -> fail(
+                else -> error(
                     "PFTP builder '${method.name}' has an unrecognized parameter shape " +
                         "${method.parameterTypes.toList()} -- this test doesn't know how to exercise it " +
                         "safely; add explicit coverage before merging",
-                ) as Nothing
+                )
             }
 
             for (i in result.indices) {
