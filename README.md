@@ -31,11 +31,11 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.0.2")
+    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.1.0")
 }
 ```
 
-`v1.0.2` is the latest released tag; check the
+`v1.1.0` is the latest released tag; check the
 [JitPack build log](https://jitpack.io/#Adri-Fa/polar-loop-protocol-android) if you pin a
 different one to confirm it actually built.
 

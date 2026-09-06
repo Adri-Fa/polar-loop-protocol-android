@@ -10,7 +10,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import com.polarloopdebugger.protocol.CLIENT_CHARACTERISTIC_CONFIG_UUID
 import com.polarloopdebugger.protocol.ControlPointResponse
 import com.polarloopdebugger.protocol.DataFrame
@@ -56,7 +56,17 @@ import java.util.UUID
 class PolarGattClient(
     private val context: Context,
     private val listener: Listener,
+    // BluetoothGattCallback delivery (onCharacteristicChanged, onCharacteristicWrite, etc.)
+    // defaults to the caller's main thread when connectGatt gets no Handler -- that forced
+    // finishPftpResponse's synchronous hex/string formatting of full PFTP responses onto whatever
+    // thread called connect(), with no way for a consumer to opt out (confirmed via a real
+    // on-device ANR trace during sync). Default to our own background thread; pass a Handler here
+    // to control delivery yourself instead (e.g. to share one thread across GATT clients).
+    private val callbackHandler: Handler? = null,
 ) {
+    private val ownedCallbackThread: HandlerThread? =
+        if (callbackHandler == null) HandlerThread("PolarGattClient").apply { start() } else null
+    private val effectiveCallbackHandler: Handler = callbackHandler ?: Handler(ownedCallbackThread!!.looper)
     interface Listener {
         fun onLog(message: String)
         fun onConnectionStateChanged(connected: Boolean)
@@ -101,7 +111,7 @@ class PolarGattClient(
     private var pftpPendingPath: String? = null
     private var pftpExpectedSize: Long? = null
     private val pftpResponseBuffer = ByteArrayOutputStream()
-    private val pftpHandler = Handler(Looper.getMainLooper())
+    private val pftpHandler = effectiveCallbackHandler
     private val pftpFinishResponse = Runnable { finishPftpResponse() }
 
     private fun finishPftpResponse() {
@@ -154,7 +164,13 @@ class PolarGattClient(
     @SuppressLint("MissingPermission") // caller (MainActivity) checks BLUETOOTH_CONNECT first
     fun connect(device: BluetoothDevice) {
         listener.onLog("connecting to ${device.address}...")
-        gatt = device.connectGatt(context, false, gattCallback)
+        // transport=TRANSPORT_AUTO, phy=PHY_LE_1M_MASK are connectGatt's own defaults for the
+        // handler-less overload -- passed explicitly here only because the Handler param requires
+        // this longer overload, not to change connection behavior.
+        gatt = device.connectGatt(
+            context, false, gattCallback,
+            BluetoothDevice.TRANSPORT_AUTO, BluetoothDevice.PHY_LE_1M_MASK, effectiveCallbackHandler,
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -172,6 +188,7 @@ class PolarGattClient(
         pftpResponseBuffer.reset()
         opQueue.clear()
         opInFlight = false
+        ownedCallbackThread?.quitSafely()
     }
 
     fun sendGetMeasurementSettings(type: MeasurementType) = writeControlPoint(
