@@ -285,6 +285,7 @@ class PolarGattClient(
                 listener.onLog("ERROR: failed to write PFTP GET for $path")
                 pftpPendingPath = null
                 pftpExpectedSize = null
+                listener.onPftpTimeout(path)
                 opDone()
                 return@enqueue
             }
@@ -320,6 +321,7 @@ class PolarGattClient(
             if (!writeCharacteristicCompat(g, characteristic, request, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)) {
                 listener.onLog("ERROR: failed to write PFTP GET_DISK_SPACE query")
                 pftpPendingPath = null
+                listener.onPftpTimeout(DISK_SPACE_PSEUDO_PATH)
                 opDone()
                 return@enqueue
             }
