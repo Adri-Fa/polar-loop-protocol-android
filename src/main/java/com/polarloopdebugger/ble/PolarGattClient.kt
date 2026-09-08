@@ -64,9 +64,23 @@ class PolarGattClient(
     // to control delivery yourself instead (e.g. to share one thread across GATT clients).
     private val callbackHandler: Handler? = null,
 ) {
-    private val ownedCallbackThread: HandlerThread? =
-        if (callbackHandler == null) HandlerThread("PolarGattClient").apply { start() } else null
-    private val effectiveCallbackHandler: Handler = callbackHandler ?: Handler(ownedCallbackThread!!.looper)
+    // Only set while an owned background thread is actually alive -- dispose() nulls this out
+    // the instant it quits the thread's Looper, so currentCallbackHandler() never has to guess
+    // whether a previously-owned thread is still alive: non-null here means it is.
+    private var ownedCallbackThread: HandlerThread? = null
+
+    // Recomputed on every call rather than cached, so a client survives a dispose()-before-any-
+    // connect() (e.g. a caller that reuses a single long-lived instance, like ConnectionManager's
+    // process-lifetime singleton) instead of being left permanently wired to a dead Looper -- a
+    // Handler posted to a quit Looper silently drops every message, no exception, no crash, just
+    // BluetoothGattCallback delivery (and pftpHandler) going dark forever after the first dispose().
+    private fun currentCallbackHandler(): Handler {
+        callbackHandler?.let { return it }
+        val thread = ownedCallbackThread ?: HandlerThread("PolarGattClient").apply { start() }.also {
+            ownedCallbackThread = it
+        }
+        return Handler(thread.looper)
+    }
     interface Listener {
         fun onLog(message: String)
         fun onConnectionStateChanged(connected: Boolean)
@@ -111,7 +125,7 @@ class PolarGattClient(
     private var pftpPendingPath: String? = null
     private var pftpExpectedSize: Long? = null
     private val pftpResponseBuffer = ByteArrayOutputStream()
-    private val pftpHandler = effectiveCallbackHandler
+    private val pftpHandler: Handler get() = currentCallbackHandler()
     private val pftpFinishResponse = Runnable { finishPftpResponse() }
 
     private fun finishPftpResponse() {
@@ -169,7 +183,7 @@ class PolarGattClient(
         // this longer overload, not to change connection behavior.
         gatt = device.connectGatt(
             context, false, gattCallback,
-            BluetoothDevice.TRANSPORT_AUTO, BluetoothDevice.PHY_LE_1M_MASK, effectiveCallbackHandler,
+            BluetoothDevice.TRANSPORT_AUTO, BluetoothDevice.PHY_LE_1M_MASK, currentCallbackHandler(),
         )
     }
 
@@ -182,13 +196,19 @@ class PolarGattClient(
         hrChar = null
         pftpRequestResponseChar = null
         pftpSessionControlChar = null
-        pftpHandler.removeCallbacks(pftpFinishResponse)
+        // Guarded: pftpHandler's getter lazily starts an owned thread if none exists yet, and a
+        // dispose() that runs before any connect() (e.g. a caller tearing down a never-connected
+        // client) must not spin one up just to immediately quit it below.
+        if (callbackHandler != null || ownedCallbackThread != null) {
+            pftpHandler.removeCallbacks(pftpFinishResponse)
+        }
         pftpPendingPath = null
         pftpExpectedSize = null
         pftpResponseBuffer.reset()
         opQueue.clear()
         opInFlight = false
         ownedCallbackThread?.quitSafely()
+        ownedCallbackThread = null
     }
 
     fun sendGetMeasurementSettings(type: MeasurementType) = writeControlPoint(
