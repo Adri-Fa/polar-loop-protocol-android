@@ -32,6 +32,7 @@ class ProtoReader(private val data: ByteArray, private var offset: Int = 0) {
         var result = 0L
         var shift = 0
         while (true) {
+            if (offset >= data.size) throw PftpProtocolException("truncated varint at offset $offset")
             val b = data[offset].toInt() and 0xFF
             offset++
             result = result or ((b.toLong() and 0x7F) shl shift)
@@ -50,21 +51,25 @@ class ProtoReader(private val data: ByteArray, private var offset: Int = 0) {
             WireType.VARINT -> ProtoField(fieldNumber, wireType, readVarint(), null)
             WireType.LENGTH_DELIMITED -> {
                 val len = readVarint().toInt()
-                val bytes = data.copyOfRange(offset, offset + len)
-                offset += len
+                val bytes = readBytes(len)
                 ProtoField(fieldNumber, wireType, null, bytes)
             }
-            WireType.FIXED64 -> {
-                val bytes = data.copyOfRange(offset, offset + 8)
-                offset += 8
-                ProtoField(fieldNumber, wireType, null, bytes)
-            }
-            WireType.FIXED32 -> {
-                val bytes = data.copyOfRange(offset, offset + 4)
-                offset += 4
-                ProtoField(fieldNumber, wireType, null, bytes)
-            }
+            WireType.FIXED64 -> ProtoField(fieldNumber, wireType, null, readBytes(8))
+            WireType.FIXED32 -> ProtoField(fieldNumber, wireType, null, readBytes(4))
         }
+    }
+
+    // Shared bounds check for LENGTH_DELIMITED/FIXED64/FIXED32 payloads -- a truncated or
+    // corrupted buffer (or a length that decodes to something past the end, e.g. from a
+    // misread tag) must raise the package's own PftpProtocolException, not let the JVM throw
+    // an uncaught IndexOutOfBoundsException past every decoder that calls readField().
+    private fun readBytes(len: Int): ByteArray {
+        if (len < 0 || offset + len > data.size) {
+            throw PftpProtocolException("truncated field: need $len bytes at offset $offset, have ${data.size - offset}")
+        }
+        val bytes = data.copyOfRange(offset, offset + len)
+        offset += len
+        return bytes
     }
 
     companion object {
