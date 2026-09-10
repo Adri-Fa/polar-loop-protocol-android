@@ -158,9 +158,17 @@ class PolarGattClient(
     private val opQueue = ArrayDeque<() -> Unit>()
     private var opInFlight = false
 
+    // Posted through the same Handler that delivers GATT callbacks (and therefore calls opDone())
+    // so opQueue/opInFlight are only ever touched from that one Looper, regardless of which thread
+    // sendPftpGet/sendPftpDiskSpaceQuery/etc. are called from -- callers have no thread affinity
+    // (main thread, a coroutine dispatcher, ...) but opDone() only ever fires on the callback
+    // thread, and opInFlight is a plain, unsynchronized var with no cross-thread visibility
+    // guarantee on its own.
     private fun enqueue(op: () -> Unit) {
-        opQueue.addLast(op)
-        runNext()
+        currentCallbackHandler().post {
+            opQueue.addLast(op)
+            runNext()
+        }
     }
 
     private fun runNext() {
@@ -201,12 +209,25 @@ class PolarGattClient(
         // client) must not spin one up just to immediately quit it below.
         if (callbackHandler != null || ownedCallbackThread != null) {
             pftpHandler.removeCallbacks(pftpFinishResponse)
+            // Same cross-thread gap enqueue() closes: opQueue/opInFlight are only ever safe to
+            // touch from the callback Looper, so clear them there too instead of on dispose()'s
+            // caller thread. post() never blocks the caller -- even when dispose() itself runs on
+            // this very Looper -- so this can't deadlock; quitSafely() below only stops the Looper
+            // once already-queued messages (this one included, since post() enqueues synchronously
+            // before quitSafely() runs) have been dispatched.
+            pftpHandler.post {
+                opQueue.clear()
+                opInFlight = false
+            }
+        } else {
+            // No handler was ever started (dispose() before any connect()) -- nothing could have
+            // touched opQueue/opInFlight from another thread, so clear directly.
+            opQueue.clear()
+            opInFlight = false
         }
         pftpPendingPath = null
         pftpExpectedSize = null
         pftpResponseBuffer.reset()
-        opQueue.clear()
-        opInFlight = false
         ownedCallbackThread?.quitSafely()
         ownedCallbackThread = null
     }
