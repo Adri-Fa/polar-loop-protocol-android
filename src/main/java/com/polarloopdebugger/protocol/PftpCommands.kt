@@ -10,10 +10,10 @@ package com.polarloopdebugger.protocol
  * file that could select a different command. The library only ever sends these bytes wrapped in
  * an [OutgoingFrame]; OutgoingFrameAllowListTest pins every byte string that type can produce.
  *
- * [buildDiskSpaceQuery] and [buildExerciseStatusQuery] build PbPFtpQuery frames (a structurally
- * different, id-based wire mechanism, see PftpConstants) rather than PbPFtpOperations. Each takes
- * no parameters and returns one fixed byte array, so neither can be repurposed to send any other
- * PbPFtpQuery id.
+ * [buildDiskSpaceQuery], [buildExerciseStatusQuery] and [buildRequestSynchronization] build
+ * PbPFtpQuery frames (a structurally different, id-based wire mechanism, see PftpConstants) rather
+ * than PbPFtpOperations. Each takes no parameters and returns one fixed byte array, so none can be
+ * repurposed to send any other PbPFtpQuery id.
  *
  * Real deletion/write support (REMOVE/PUT/MERGE) is intentionally out of scope for this phase --
  * a deliberate human decision, not a placeholder. See README.md.
@@ -79,6 +79,15 @@ fun buildDiskSpaceQuery(): ByteArray = DISK_SPACE_QUERY_BYTES.copyOf()
  * the Loop (capture9 frame 345), which answered `02 08 03` -- exercise_state OFF.
  */
 fun buildExerciseStatusQuery(): ByteArray = EXERCISE_STATUS_QUERY_BYTES.copyOf()
+
+/**
+ * `02 0D 80` -- PbPFtpQuery.REQUEST_SYNCHRONIZATION (id=13), no params. CAPTURE-VALIDATED:
+ * byte-identical to the request Polar Flow sends the Loop before its own sync (capture9 frame 424),
+ * which the Loop answered with a payload-less LAST packet. Polar documents the call that sends it
+ * as making the device "flush the latest data to files", so the library never sends it on its own:
+ * only PolarGattClient.requestSynchronization, called by the app, does.
+ */
+fun buildRequestSynchronization(): ByteArray = REQUEST_SYNCHRONIZATION_BYTES.copyOf()
 
 /**
  * `00 00 00` -- the RFC76 stream cancel BlePsFtpClient.readResponse writes on a sequence-number

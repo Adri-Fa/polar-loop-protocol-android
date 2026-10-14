@@ -92,6 +92,9 @@ object ConnectionManager : PolarGattClient.Listener {
     fun sendPftpExerciseStatusQuery(onResult: (PftpResult) -> Unit) = client.sendPftpExerciseStatusQuery(onResult)
     fun checkSyncGate(onResult: (SyncGate) -> Unit) = client.checkSyncGate(onResult)
 
+    /** Opt-in REQUEST_SYNCHRONIZATION; see PolarGattClient.requestSynchronization. */
+    fun requestSynchronization(onResult: (PftpResult) -> Unit) = client.requestSynchronization(onResult)
+
     // -- PolarGattClient.Listener: fan out to every registered observer --
 
     override fun onLog(message: String) {

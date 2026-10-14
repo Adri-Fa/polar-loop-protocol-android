@@ -169,7 +169,7 @@ class GattQueueStressTest {
                         results[id] = r
                         if (counts[id].incrementAndGet() == 1) allAnswered.countDown()
                     }
-                    when (random.nextInt(10)) {
+                    when (random.nextInt(11)) {
                         in 0..5 -> {
                             kinds[id] = Kind.Get
                             paths[id] = "/T/$p/$i"
@@ -177,6 +177,7 @@ class GattQueueStressTest {
                         }
                         6 -> { kinds[id] = Kind.Query; queue.request(OutgoingFrame.DiskSpaceQuery, onResult) }
                         7 -> { kinds[id] = Kind.Query; queue.request(OutgoingFrame.ExerciseStatusQuery, onResult) }
+                        8 -> { kinds[id] = Kind.Query; queue.request(OutgoingFrame.RequestSynchronization, onResult) }
                         else -> {
                             kinds[id] = Kind.Notify
                             val frame = listOf(

@@ -60,6 +60,13 @@ class PftpCommandsTest {
         assertArrayEquals(p128.toByteArray(), f128.copyOfRange(8, f128.size))
     }
 
+    /** capture9 frame 424: Polar Flow wrote exactly these 3 bytes; the Loop answered with an empty LAST. */
+    @Test
+    fun `REQUEST_SYNCHRONIZATION query frame matches Polar Flow's`() {
+        assertArrayEquals(hex("02 0D 80"), buildRequestSynchronization())
+        assertEquals(PftpResponseReader.Step.Done(PftpResult.Empty), PftpResponseReader().accept(hex("02")))
+    }
+
     @Test
     fun `stream cancel frame`() {
         assertArrayEquals(hex("00 00 00"), buildStreamCancel())

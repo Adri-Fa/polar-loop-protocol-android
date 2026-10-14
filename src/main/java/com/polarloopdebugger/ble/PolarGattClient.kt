@@ -171,6 +171,15 @@ class PolarGattClient(
     /** GET_EXERCISE_STATUS (query 25); decode a Content result with decodeExerciseState. */
     fun sendPftpExerciseStatusQuery(onResult: (PftpResult) -> Unit) = request(OutgoingFrame.ExerciseStatusQuery, onResult)
 
+    /**
+     * REQUEST_SYNCHRONIZATION (query 13, `02 0D 80`), the request Polar Flow sends before it syncs.
+     * Explicit opt-in: Polar documents it as making the device "flush the latest data to files", so
+     * nothing in this library ever calls it -- not checkSyncGate, not any GET. Polar's SDK sends it
+     * before INITIALIZE_SESSION/START_SYNC; ordering is the caller's choice. Same one-in-flight queue
+     * and typed result as every other request (the Loop answered capture9's with Empty).
+     */
+    fun requestSynchronization(onResult: (PftpResult) -> Unit) = request(OutgoingFrame.RequestSynchronization, onResult)
+
     /** Asks GET_EXERCISE_STATUS whether a sync can start now. Read-only: it writes nothing but query 25. */
     fun checkSyncGate(onResult: (SyncGate) -> Unit) = sendPftpExerciseStatusQuery { onResult(syncGateOf(it)) }
 

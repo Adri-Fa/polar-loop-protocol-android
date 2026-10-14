@@ -12,16 +12,17 @@ package com.polarloopdebugger.protocol
  * REMOVE values -- only the literal GET command byte (0x00) is ever written, hardcoded directly
  * into buildGetRequest. OutgoingFrameAllowListTest pins every byte string the library can emit.
  *
- * This also covers the two PbPFtpQuery ids this app can send (GET_DISK_SPACE=5 and
- * GET_EXERCISE_STATUS=25): a Query is a structurally different wire mechanism than an Operation (a
- * numeric id, not a path-carrying command), but the same discipline applies -- there is no id
- * parameter or enum anywhere in this app that could select any other PbPFtpQuery value
- * (SET_SYSTEM_TIME, PREPARE_FIRMWARE_UPDATE, START/STOP_EXERCISE, etc.), only fixed byte arrays.
+ * This also covers the three PbPFtpQuery ids this app can send (GET_DISK_SPACE=5,
+ * GET_EXERCISE_STATUS=25, REQUEST_SYNCHRONIZATION=13): a Query is a structurally different wire
+ * mechanism than an Operation (a numeric id, not a path-carrying command), but the same discipline
+ * applies -- there is no id parameter or enum anywhere in this app that could select any other
+ * PbPFtpQuery value (SET_SYSTEM_TIME, PREPARE_FIRMWARE_UPDATE, START/STOP_EXERCISE, etc.), only
+ * fixed byte arrays.
  *
- * REQUEST_SYNCHRONIZATION (13) is deliberately absent: Polar's only documented effect of the call
- * that sends it is that it "will cause the device to flush the latest data to files"
- * (polar-ble-sdk PolarBleApi.sendInitializationAndStartSyncNotifications), i.e. it changes stored
- * data.
+ * REQUEST_SYNCHRONIZATION is an explicit opt-in, never sent by the library itself: Polar's only
+ * documented effect of the call that sends it is that it "will cause the device to flush the latest
+ * data to files" (polar-ble-sdk PolarBleApi.sendInitializationAndStartSyncNotifications), i.e. the
+ * device writes its own buffered data out to its files.
  */
 
 // The "Unknown Service" (0xFEEE, Polar Electro Oy SIG UUID) grouping fb005c51/52/53 -- see
@@ -60,6 +61,9 @@ internal val DISK_SPACE_QUERY_BYTES = byteArrayOf(0x02, 0x05, 0x80.toByte())
 
 // PbPFtpQuery.GET_EXERCISE_STATUS = 25 (0x19), same query framing, no params.
 internal val EXERCISE_STATUS_QUERY_BYTES = byteArrayOf(0x02, 0x19, 0x80.toByte())
+
+// PbPFtpQuery.REQUEST_SYNCHRONIZATION = 13 (0x0D), same query framing, no params. Opt-in only.
+internal val REQUEST_SYNCHRONIZATION_BYTES = byteArrayOf(0x02, 0x0D, 0x80.toByte())
 
 // RFC76 stream cancel (BlePsFtpClient.readResponse): status-0 header byte + zero error code.
 internal val STREAM_CANCEL_BYTES = byteArrayOf(0x00, 0x00, 0x00)

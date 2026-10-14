@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.0
+
+### Added
+- `requestSynchronization()` (`PolarGattClient` and `ConnectionManager`): sends
+  PbPFtpQuery REQUEST_SYNCHRONIZATION (13) as `02 0D 80`, byte-identical to
+  Polar Flow's request in capture9 (frame 424), and delivers one `PftpResult`
+  like every other request. It is an explicit opt-in. Polar documents the call
+  that sends it as making the device "flush the latest data to files", so
+  nothing in the library calls it. `OutgoingFrame.RequestSynchronization` is
+  part of the closed frame type and the allow-list. A source tripwire test
+  fails if any other code path can send it.
+
+### Changed
+- `OutgoingFrameAllowListTest` used a real dated path from a capture as test
+  input. It now uses a synthetic one. The v1.2.0 commit still contains the old
+  path in git history.
+
+### Known issue (not changed)
+- Since v1.2.0, loopCompanion's links end with reason 0x22 (LL response
+  timeout) instead of 0x16. Teardown is the same in v1.1.4 and v1.2.0:
+  `dispose()` calls `gatt.close()` without `gatt.disconnect()`, and the Android
+  stack disconnects the idle link 4 s later. The 0x22 runs closed sooner after
+  the Loop's own slow-parameter request, but HCI logs can't show the cause. No
+  fix until one is clear.
+
 ## v1.2.0
 
 Breaking: the PFTP API changed. See "Changed" below.

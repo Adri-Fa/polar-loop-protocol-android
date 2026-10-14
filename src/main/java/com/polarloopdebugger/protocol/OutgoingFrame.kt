@@ -26,6 +26,9 @@ sealed class OutgoingFrame(val characteristic: String, private val encoded: Byte
 
     data object ExerciseStatusQuery : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildExerciseStatusQuery())
 
+    /** Opt-in only (PolarGattClient.requestSynchronization); the library never sends it itself. */
+    data object RequestSynchronization : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildRequestSynchronization())
+
     /** Only ever written in reply to a broken response stream, see PftpResponseReader. */
     data object StreamCancel : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildStreamCancel())
 

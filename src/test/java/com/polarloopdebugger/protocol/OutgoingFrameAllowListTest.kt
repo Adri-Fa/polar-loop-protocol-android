@@ -8,6 +8,7 @@ import com.polarloopdebugger.protocol.OutgoingFrame.PftpGet
 import com.polarloopdebugger.protocol.OutgoingFrame.PmdGetSettings
 import com.polarloopdebugger.protocol.OutgoingFrame.PmdStart
 import com.polarloopdebugger.protocol.OutgoingFrame.PmdStop
+import com.polarloopdebugger.protocol.OutgoingFrame.RequestSynchronization
 import com.polarloopdebugger.protocol.OutgoingFrame.StartSync
 import com.polarloopdebugger.protocol.OutgoingFrame.StopSyncCompleted
 import com.polarloopdebugger.protocol.OutgoingFrame.StreamCancel
@@ -15,6 +16,7 @@ import com.polarloopdebugger.protocol.OutgoingFrame.TerminateSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import kotlin.random.Random
 
 /**
@@ -32,8 +34,11 @@ class OutgoingFrameAllowListTest {
     /** fb005c53 (PFTP session control): INITIALIZE_SESSION, START_SYNC, STOP_SYNC{completed=true}, TERMINATE_SESSION. */
     private val sessionControl = setOf("02 08", "02 00", "02 01 08 01", "02 09")
 
-    /** fb005c51 (PFTP request/response), fixed frames: GET_DISK_SPACE, GET_EXERCISE_STATUS, stream cancel. */
-    private val requestResponseFixed = setOf("02 05 80", "02 19 80", "00 00 00")
+    /**
+     * fb005c51 (PFTP request/response), fixed frames: GET_DISK_SPACE, GET_EXERCISE_STATUS,
+     * REQUEST_SYNCHRONIZATION (opt-in only, see the last test), stream cancel.
+     */
+    private val requestResponseFixed = setOf("02 05 80", "02 19 80", "02 0D 80", "00 00 00")
 
     /**
      * fb005c51, the one variable frame -- a GET: `02 [len:u16 LE, bit 15 clear] 08 00 12 [n:varint]
@@ -75,7 +80,7 @@ class OutgoingFrameAllowListTest {
         val h = b.toHex()
         return when (f) {
             is PftpGet -> f.characteristic == PFTP_REQUEST_RESPONSE_UUID && isGet(b, f.path)
-            DiskSpaceQuery, ExerciseStatusQuery, StreamCancel ->
+            DiskSpaceQuery, ExerciseStatusQuery, RequestSynchronization, StreamCancel ->
                 f.characteristic == PFTP_REQUEST_RESPONSE_UUID && h in requestResponseFixed
             InitializeSession, StartSync, StopSyncCompleted, TerminateSession ->
                 f.characteristic == PFTP_SESSION_CONTROL_UUID && h in sessionControl
@@ -94,7 +99,7 @@ class OutgoingFrameAllowListTest {
             String(CharArray(random.nextInt(0, 300)) { random.nextInt(0, 0x800).toChar() })
         }
         listOf(
-            "/", "/DEVICE.BPB", "/U/0/AUTOS/AUTOS000.BPB", "", "/U/0/20260728/E/171729/00/SAMPLES.BPB",
+            "/", "/DEVICE.BPB", "/U/0/AUTOS/AUTOS000.BPB", "", "/U/0/20240310/E/120000/00/SAMPLES.BPB",
             "\u0008\u0001", "\u0008\u0003", "\u0012\u0000/x", // bytes that spell PUT/REMOVE inside the path
             "x".repeat(127), "x".repeat(128), "x".repeat(16_383), "é".repeat(100),
         ) + fuzzed
@@ -103,7 +108,10 @@ class OutgoingFrameAllowListTest {
     private val tlvs = listOf(ByteArray(0), hex("00-01-16-00-01-01-18-00-04-01-02"), hex("08 03"), hex("FF FF FF"))
 
     private fun everyFrame(): List<OutgoingFrame> =
-        listOf(DiskSpaceQuery, ExerciseStatusQuery, StreamCancel, InitializeSession, StartSync, StopSyncCompleted, TerminateSession) +
+        listOf(
+            DiskSpaceQuery, ExerciseStatusQuery, RequestSynchronization, StreamCancel,
+            InitializeSession, StartSync, StopSyncCompleted, TerminateSession,
+        ) +
             paths.map(::PftpGet) +
             MeasurementType.entries.flatMap { t -> listOf(PmdGetSettings(t), PmdStop(t)) + tlvs.map { PmdStart(t, it) } } +
             NotifyTarget.entries.map(::EnableNotifications)
@@ -153,9 +161,10 @@ class OutgoingFrameAllowListTest {
             }
             assertEquals(0x02, b[0].toInt()) // first and only packet, sequence 0, LAST
             if (b[2].toInt() and 0x80 != 0) {
-                // Query: RFC60 id, never an operation. Only GET_DISK_SPACE (5) and GET_EXERCISE_STATUS (25).
+                // Query: RFC60 id, never an operation. Only GET_DISK_SPACE (5), REQUEST_SYNCHRONIZATION
+                // (13) and GET_EXERCISE_STATUS (25).
                 val id = (b[1].toInt() and 0xFF) or ((b[2].toInt() and 0x7F) shl 8)
-                assertTrue("query id $id", id == 5 || id == 25)
+                assertTrue("query id $id", id in setOf(5, 13, 25))
                 continue
             }
             // PbPFtpOperation: command (field 1) must be GET = 0, whatever bytes the path holds.
@@ -178,5 +187,31 @@ class OutgoingFrameAllowListTest {
     fun `frames are immutable -- mutating bytes can't turn START_SYNC into RESET`() {
         StartSync.bytes[1] = 0x02
         assertEquals("02 00", StartSync.bytes.toHex())
+    }
+
+    /**
+     * REQUEST_SYNCHRONIZATION is opt-in: Polar documents it as making the device flush data to
+     * files, so only the app may send it. A source tripwire: every non-comment line under src/main
+     * that names it must be one of these -- its bytes, builder, frame, and the two public opt-in
+     * methods. A new call site anywhere in the library (checkSyncGate, a GET, ...) fails here.
+     */
+    @Test
+    fun `the library never sends REQUEST_SYNCHRONIZATION on its own`() {
+        val mentions = File("src/main/java").walk().filter { it.extension == "kt" }.flatMap { file ->
+            file.readLines().map { it.trim() }
+                .filter { !it.startsWith("*") && !it.startsWith("/*") && !it.startsWith("//") }
+                .filter { it.contains("RequestSynchronization", ignoreCase = true) || "REQUEST_SYNCHRONIZATION" in it }
+                .map { "${file.name}: $it" }
+        }.toSet()
+        assertEquals(
+            setOf(
+                "PftpConstants.kt: internal val REQUEST_SYNCHRONIZATION_BYTES = byteArrayOf(0x02, 0x0D, 0x80.toByte())",
+                "PftpCommands.kt: fun buildRequestSynchronization(): ByteArray = REQUEST_SYNCHRONIZATION_BYTES.copyOf()",
+                "OutgoingFrame.kt: data object RequestSynchronization : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildRequestSynchronization())",
+                "PolarGattClient.kt: fun requestSynchronization(onResult: (PftpResult) -> Unit) = request(OutgoingFrame.RequestSynchronization, onResult)",
+                "ConnectionManager.kt: fun requestSynchronization(onResult: (PftpResult) -> Unit) = client.requestSynchronization(onResult)",
+            ),
+            mentions,
+        )
     }
 }

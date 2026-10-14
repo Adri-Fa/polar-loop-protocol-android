@@ -17,6 +17,12 @@ nothing can produce a PFTP PUT/MERGE/REMOVE, RESET (`02 02` on fb005c53), or a
 PMD opcode outside 1-3. This library can read a Polar Loop Gen 2's data; it
 cannot write to it, remove anything, or reconfigure it.
 
+One opt-in exception: `requestSynchronization()` sends REQUEST_SYNCHRONIZATION
+(`02 0D 80`, the request Polar Flow sends before it syncs). Polar documents it as
+making the device "flush the latest data to files", so the device writes its own
+buffered data out. The library never sends it on its own; a test fails if any
+code path besides that method can.
+
 ## Using it
 
 Every PFTP request delivers exactly one `PftpResult` to the callback passed
@@ -33,6 +39,7 @@ client.sendPftpGet("/U/0/AUTOS/") { result ->
     }
 }
 client.checkSyncGate { gate -> /* Ready, ExerciseRunning or Busy(code) */ }
+client.requestSynchronization { result -> }           // opt-in, see above
 client.readBatteryLevel { percent -> }
 ```
 
@@ -58,11 +65,11 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.2.0")
+    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.3.0")
 }
 ```
 
-`v1.2.0` is the latest released tag. It breaks the 1.1.x PFTP API, see
+`v1.3.0` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
 [CHANGELOG.md](CHANGELOG.md). Check the
 [JitPack build log](https://jitpack.io/#Adri-Fa/polar-loop-protocol-android) if you pin a
 different one to confirm it actually built.
