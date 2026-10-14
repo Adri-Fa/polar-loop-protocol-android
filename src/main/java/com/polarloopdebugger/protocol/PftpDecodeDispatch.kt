@@ -29,29 +29,3 @@ private val AUTOS_FILENAME = Regex("AUTOS\\d+\\.BPB")
 
 // e.g. "ASAMPL0.BPB" -- only one seen per date so far (capture17), but numbered like AUTOS.
 private val ACT_FILENAME = Regex("ASAMPL\\d+\\.BPB")
-
-/**
- * Outcome of reading a PFTP GET response through [decodePftpResponse]: either the decoded file
- * content, or a clean signal that the device has none -- never a parse exception for this case.
- */
-sealed class PftpDecodeResult<out T> {
-    data class Content<T>(val value: T) : PftpDecodeResult<T>()
-    object NoData : PftpDecodeResult<Nothing>()
-}
-
-// The 2-byte PFTP status response (0x67 0x00) a device sends instead of file content when there's
-// nothing at the requested path (confirmed on Daily Summary/Nightly Recharge/Sleep/Skin
-// Temperature GETs for a day with no data) -- distinct from real payloads (seen as small as ~239
-// bytes) and from truncated/corrupted data. 0x67's low 3 bits are protobuf wire type 7, which
-// doesn't exist in the spec, so every decodeXFile function in this package throws "unsupported
-// wire type 7" if handed this directly (each just does `ProtoReader(data)` then
-// `while (reader.hasMore())`, with no shape check first).
-private val PFTP_NO_DATA_STUB = byteArrayOf(0x67, 0x00)
-
-/**
- * Shared PFTP response read entry point -- route response bytes through here rather than calling
- * a decodeXFile function directly, so the "no data at this path" stub is recognized once for every
- * decoder in this package, present and future, instead of each one crashing on it independently.
- */
-fun <T> decodePftpResponse(data: ByteArray, decode: (ByteArray) -> T): PftpDecodeResult<T> =
-    if (data.contentEquals(PFTP_NO_DATA_STUB)) PftpDecodeResult.NoData else PftpDecodeResult.Content(decode(data))

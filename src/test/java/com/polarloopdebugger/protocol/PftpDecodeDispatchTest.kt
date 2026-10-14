@@ -73,18 +73,4 @@ class PftpDecodeDispatchTest {
         assertEquals(PftpContentKind.GENERIC, classifyPftpPath("/U/0/20240310/SLEEPSCO/ID.BPB"))
         assertEquals(PftpContentKind.GENERIC, classifyPftpPath("/U/0/20240310/SLEEPWAK/SLEEW000.BPB"))
     }
-
-    @Test
-    fun `2-byte PFTP no-data stub (67 00) decodes as NoData without invoking the decoder`() {
-        val result = decodePftpResponse(byteArrayOf(0x67, 0x00)) {
-            error("decoder must not run for the no-data stub")
-        }
-        assertEquals(PftpDecodeResult.NoData, result)
-    }
-
-    @Test
-    fun `bytes merely shaped like the stub still flow through to the real decoder`() {
-        val result = decodePftpResponse(byteArrayOf(0x67, 0x01)) { it.size }
-        assertEquals(PftpDecodeResult.Content(2), result)
-    }
 }

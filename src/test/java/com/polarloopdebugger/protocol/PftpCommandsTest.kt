@@ -2,7 +2,6 @@ package com.polarloopdebugger.protocol
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PftpCommandsTest {
@@ -47,61 +46,22 @@ class PftpCommandsTest {
         assertArrayEquals(hex("02 05 80"), buildDiskSpaceQuery())
     }
 
-    /**
-     * HARD REGRESSION GUARD, not optional: reflectively enumerates every `build*` function in
-     * PftpCommands.kt and proves none of them can produce a PUT (`08 01`) or REMOVE (`08 03`)
-     * PbPFtpOperation command byte. If a new builder is ever added, this test fails the build
-     * until it's reviewed and explicitly added to [knownBuilderNames].
-     *
-     * Session-control frames (built with no args) legitimately contain byte sequences that look
-     * like `08 01` -- e.g. buildStopSyncCompleted's PbPFtpStopSyncParams{completed=true} -- but
-     * those are never PbPFtpOperation command bytes because a PbPFtpOperation always carries the
-     * path field's tag (`0x12`) right after its command byte, and session-control frames never
-     * contain a `0x12` byte at all. So this only interprets a byte as an operation's command byte
-     * when it's immediately followed by `0x12` -- i.e. only for genuine PbPFtpOperation requests.
-     */
     @Test
-    fun `no build function can construct PUT or REMOVE`() {
-        val clazz = Class.forName("com.polarloopdebugger.protocol.PftpCommandsKt")
-        val builders = clazz.declaredMethods.filter { it.name.startsWith("build") }
-        assertTrue("expected the known PFTP builders to exist", builders.isNotEmpty())
+    fun `GET path length is a varint -- 127 bytes takes one byte, 128 takes two`() {
+        val p127 = "/" + "x".repeat(126)
+        val f127 = buildGetRequest(p127)
+        assertArrayEquals(hex("02 83 00 08 00 12 7F"), f127.copyOfRange(0, 7))
+        assertEquals(7 + 127, f127.size)
 
-        val knownBuilderNames = setOf(
-            "buildGetRequest",
-            "buildInitializeSession",
-            "buildStartSync",
-            "buildStopSyncCompleted",
-            "buildTerminateSession",
-            "buildDiskSpaceQuery",
-        )
+        val p128 = "/" + "x".repeat(127)
+        val f128 = buildGetRequest(p128)
+        // RFC60 length 0x0085 = 3 + 2-byte varint + 128; varint 128 = 80 01.
+        assertArrayEquals(hex("02 85 00 08 00 12 80 01"), f128.copyOfRange(0, 8))
+        assertArrayEquals(p128.toByteArray(), f128.copyOfRange(8, f128.size))
+    }
 
-        for (method in builders) {
-            assertTrue(
-                "a new PFTP command builder '${method.name}' was added -- it MUST be reviewed against " +
-                    "the read-only (GET-only) guarantee and added to this test's coverage before merging",
-                knownBuilderNames.contains(method.name),
-            )
-
-            val result: ByteArray = when {
-                method.parameterTypes.contentEquals(arrayOf(String::class.java)) ->
-                    method.invoke(null, "/SOME/TEST/PATH.BIN") as ByteArray
-                method.parameterTypes.isEmpty() -> method.invoke(null) as ByteArray
-                else -> error(
-                    "PFTP builder '${method.name}' has an unrecognized parameter shape " +
-                        "${method.parameterTypes.toList()} -- this test doesn't know how to exercise it " +
-                        "safely; add explicit coverage before merging",
-                )
-            }
-
-            for (i in result.indices) {
-                if (result[i] == 0x12.toByte() && i > 0) {
-                    assertEquals(
-                        "builder '${method.name}' produced a non-GET PbPFtpOperation command byte",
-                        PFTP_COMMAND_GET.toByte(),
-                        result[i - 1],
-                    )
-                }
-            }
-        }
+    @Test
+    fun `stream cancel frame`() {
+        assertArrayEquals(hex("00 00 00"), buildStreamCancel())
     }
 }

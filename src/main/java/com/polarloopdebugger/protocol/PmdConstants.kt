@@ -16,6 +16,9 @@ const val PMD_DATA_UUID = "fb005c82-02e7-f387-1cad-8acd2d8df0c8"
 const val HR_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
 const val HR_MEASUREMENT_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
 
+/** Standard Battery Level (Battery Service 0x180F), Read + Notify on the Loop -- PROTOCOL.md "Battery Service". */
+const val BATTERY_LEVEL_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
+
 /** Standard Client Characteristic Configuration Descriptor, used to enable notify/indicate. */
 const val CLIENT_CHARACTERISTIC_CONFIG_UUID = "00002902-0000-1000-8000-00805f9b34fb"
 

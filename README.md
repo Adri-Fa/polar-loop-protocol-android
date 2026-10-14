@@ -10,10 +10,37 @@ standalone Android app that uses this library directly.
 No UI/Activity/Compose dependencies -- pure Kotlin + Android BLE/Health
 Connect APIs, usable from any Android app.
 
-**Read-only by design**: no PUT/REMOVE PFTP command builder exists anywhere
-in this codebase, and a regression test (`PftpCommandsTest`) enforces that no
-`build*` function can ever construct one. This library can read a Polar Loop
-Gen 2's data; it cannot write to it.
+**Read-only by design**: the library writes only `OutgoingFrame`s, a closed
+set of byte strings. `OutgoingFrameAllowListTest` lists every one of them per
+characteristic and fails if anything else becomes buildable. In particular,
+nothing can produce a PFTP PUT/MERGE/REMOVE, RESET (`02 02` on fb005c53), or a
+PMD opcode outside 1-3. This library can read a Polar Loop Gen 2's data; it
+cannot write to it, remove anything, or reconfigure it.
+
+## Using it
+
+Every PFTP request delivers exactly one `PftpResult` to the callback passed
+with it, on the client's callback thread:
+
+```kotlin
+client.sendPftpGet("/U/0/AUTOS/") { result ->
+    when (result) {
+        is PftpResult.Content -> decodeDirectoryListing(result.bytes)
+        PftpResult.Empty -> {}                         // success, no body
+        is PftpResult.DeviceError -> {}                // e.g. 103 NO_SUCH_FILE_OR_DIRECTORY
+        PftpResult.Timeout -> {}                       // no packet for 10 s
+        is PftpResult.Cancelled -> {}                  // disconnect, dispose, framing error, MTU
+    }
+}
+client.checkSyncGate { gate -> /* Ready, ExerciseRunning or Busy(code) */ }
+client.readBatteryLevel { percent -> }
+```
+
+Responses end on their RFC76 headers (LAST or a status-0 frame), never on a
+quiet gap. One request is in flight at a time across GETs, queries,
+session-control notifications, PMD commands and the battery read, so nothing
+is written while a response is still streaming. Callbacks get raw bytes, never
+hex strings: format them yourself, off the callback thread, if you need to.
 
 ## Install
 
@@ -31,19 +58,27 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.1.0")
+    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.2.0")
 }
 ```
 
-`v1.1.0` is the latest released tag; check the
+`v1.2.0` is the latest released tag. It breaks the 1.1.x PFTP API, see
+[CHANGELOG.md](CHANGELOG.md). Check the
 [JitPack build log](https://jitpack.io/#Adri-Fa/polar-loop-protocol-android) if you pin a
 different one to confirm it actually built.
 
 ## Testing
 
-Test fixtures are synthetic but structurally valid -- byte-accurate to each
+Decoder fixtures are synthetic but structurally valid: byte-accurate to each
 decoder's real wire format, but the values (dates, device ids, health
-numbers) are not from any real device or person. Run the suite with:
+numbers) are not from any real device or person.
+
+The PFTP response parser also runs over real Loop traffic in
+`src/test/resources/captures/`: 332 responses from a Polar Flow sync and 20
+from Polar Loop Debugger exports, including a stream cut off mid-file. These
+are redacted to their framing. RFC76 headers, packet lengths and status-0
+frames are verbatim; payload bytes are replaced by their count, and paths are
+dropped. Run the suite with:
 
 ```
 ./gradlew test

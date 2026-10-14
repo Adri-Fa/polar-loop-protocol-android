@@ -6,6 +6,8 @@ import com.polarloopdebugger.protocol.ControlPointResponse
 import com.polarloopdebugger.protocol.DataFrame
 import com.polarloopdebugger.protocol.HrMeasurement
 import com.polarloopdebugger.protocol.MeasurementType
+import com.polarloopdebugger.protocol.PftpResult
+import com.polarloopdebugger.protocol.SyncGate
 
 /**
  * App-level singleton owning the one BLE connection to the Loop. Home is the only screen that
@@ -36,8 +38,9 @@ object ConnectionManager : PolarGattClient.Listener {
 
     /** Optional raw-trace hook: this module knows nothing about logging concerns (e.g. the
      * debugger app's RawTraceLog/Logs screen) -- an app that wants one wires it up here instead
-     * of this shared module depending on any app-specific logger. */
-    var rawTraceHook: (kind: String, rawHex: String, path: String?) -> Unit = { _, _, _ -> }
+     * of this shared module depending on any app-specific logger. Gets raw bytes on the GATT
+     * callback thread: format them (e.g. toHex()) on your own thread, not inline here. */
+    var rawTraceHook: (kind: String, raw: ByteArray, path: String?) -> Unit = { _, _, _ -> }
 
     fun init(context: Context) {
         if (initialized) return
@@ -78,12 +81,16 @@ object ConnectionManager : PolarGattClient.Listener {
         client.sendRequestMeasurementStart(type, settingsTlv)
     fun sendStopMeasurement(type: MeasurementType) = client.sendStopMeasurement(type)
 
-    fun sendPftpInitializeSession() = client.sendPftpInitializeSession()
-    fun sendPftpStartSync() = client.sendPftpStartSync()
-    fun sendPftpStopSyncCompleted() = client.sendPftpStopSyncCompleted()
-    fun sendPftpTerminateSession() = client.sendPftpTerminateSession()
-    fun sendPftpGet(path: String, expectedSize: Long? = null) = client.sendPftpGet(path, expectedSize)
-    fun sendPftpDiskSpaceQuery() = client.sendPftpDiskSpaceQuery()
+    fun readBatteryLevel(onResult: (Int?) -> Unit) = client.readBatteryLevel(onResult)
+
+    fun sendPftpInitializeSession(onResult: (PftpResult) -> Unit = {}) = client.sendPftpInitializeSession(onResult)
+    fun sendPftpStartSync(onResult: (PftpResult) -> Unit = {}) = client.sendPftpStartSync(onResult)
+    fun sendPftpStopSyncCompleted(onResult: (PftpResult) -> Unit = {}) = client.sendPftpStopSyncCompleted(onResult)
+    fun sendPftpTerminateSession(onResult: (PftpResult) -> Unit = {}) = client.sendPftpTerminateSession(onResult)
+    fun sendPftpGet(path: String, onResult: (PftpResult) -> Unit) = client.sendPftpGet(path, onResult)
+    fun sendPftpDiskSpaceQuery(onResult: (PftpResult) -> Unit) = client.sendPftpDiskSpaceQuery(onResult)
+    fun sendPftpExerciseStatusQuery(onResult: (PftpResult) -> Unit) = client.sendPftpExerciseStatusQuery(onResult)
+    fun checkSyncGate(onResult: (SyncGate) -> Unit) = client.checkSyncGate(onResult)
 
     // -- PolarGattClient.Listener: fan out to every registered observer --
 
@@ -105,37 +112,33 @@ object ConnectionManager : PolarGattClient.Listener {
         listeners.forEach { it.onReadyForCommands() }
     }
 
-    override fun onControlPointResponse(response: ControlPointResponse, rawHex: String) {
-        rawTraceHook("control_point_response", rawHex, null)
-        listeners.forEach { it.onControlPointResponse(response, rawHex) }
+    override fun onControlPointResponse(response: ControlPointResponse, raw: ByteArray) {
+        rawTraceHook("control_point_response", raw, null)
+        listeners.forEach { it.onControlPointResponse(response, raw) }
     }
 
-    override fun onDataFrame(frame: DataFrame, rawHex: String) {
-        rawTraceHook("data_notification", rawHex, null)
-        listeners.forEach { it.onDataFrame(frame, rawHex) }
+    override fun onDataFrame(frame: DataFrame, raw: ByteArray) {
+        rawTraceHook("data_notification", raw, null)
+        listeners.forEach { it.onDataFrame(frame, raw) }
     }
 
-    override fun onHrMeasurement(hr: HrMeasurement, rawHex: String) {
-        rawTraceHook("hr_notification", rawHex, null)
-        listeners.forEach { it.onHrMeasurement(hr, rawHex) }
+    override fun onHrMeasurement(hr: HrMeasurement, raw: ByteArray) {
+        rawTraceHook("hr_notification", raw, null)
+        listeners.forEach { it.onHrMeasurement(hr, raw) }
     }
 
-    override fun onPftpSessionControlSent(rawHex: String) {
-        rawTraceHook("pftp_session_control", rawHex, null)
-        listeners.forEach { it.onPftpSessionControlSent(rawHex) }
+    override fun onPftpSessionControlSent(raw: ByteArray) {
+        rawTraceHook("pftp_session_control", raw, null)
+        listeners.forEach { it.onPftpSessionControlSent(raw) }
     }
 
-    override fun onPftpRequestSent(path: String, rawHex: String) {
-        rawTraceHook("pftp_request", rawHex, path)
-        listeners.forEach { it.onPftpRequestSent(path, rawHex) }
+    override fun onPftpRequestSent(label: String, raw: ByteArray) {
+        rawTraceHook("pftp_request", raw, label)
+        listeners.forEach { it.onPftpRequestSent(label, raw) }
     }
 
-    override fun onPftpResponse(path: String, data: ByteArray, rawHex: String) {
-        rawTraceHook("pftp_response", rawHex, path)
-        listeners.forEach { it.onPftpResponse(path, data, rawHex) }
-    }
-
-    override fun onPftpTimeout(path: String) {
-        listeners.forEach { it.onPftpTimeout(path) }
+    override fun onPftpResult(label: String, result: PftpResult) {
+        if (result is PftpResult.Content) rawTraceHook("pftp_response", result.bytes, label)
+        listeners.forEach { it.onPftpResult(label, result) }
     }
 }

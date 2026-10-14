@@ -10,14 +10,18 @@ package com.polarloopdebugger.protocol
  * READ-ONLY GUARANTEE: this file and [PftpCommands] together are the only code in this app that
  * can construct a PbPFtpOperation wire frame. There is no `Command` enum here with PUT/MERGE/
  * REMOVE values -- only the literal GET command byte (0x00) is ever written, hardcoded directly
- * into buildGetRequest. See PftpCommandsTest for the regression test enforcing this.
+ * into buildGetRequest. OutgoingFrameAllowListTest pins every byte string the library can emit.
  *
- * This also covers the one PbPFtpQuery this app can send (GET_DISK_SPACE, see
- * [DISK_SPACE_QUERY_BYTES]/PftpCommands.buildDiskSpaceQuery): a Query is a structurally different
- * wire mechanism than an Operation (a numeric id, not a path-carrying command), but the same
- * discipline applies -- there is no id parameter or enum anywhere in this app that could select
- * any other PbPFtpQuery value (SET_SYSTEM_TIME, PREPARE_FIRMWARE_UPDATE, START/STOP_EXERCISE,
- * etc.), only this one fixed byte array.
+ * This also covers the two PbPFtpQuery ids this app can send (GET_DISK_SPACE=5 and
+ * GET_EXERCISE_STATUS=25): a Query is a structurally different wire mechanism than an Operation (a
+ * numeric id, not a path-carrying command), but the same discipline applies -- there is no id
+ * parameter or enum anywhere in this app that could select any other PbPFtpQuery value
+ * (SET_SYSTEM_TIME, PREPARE_FIRMWARE_UPDATE, START/STOP_EXERCISE, etc.), only fixed byte arrays.
+ *
+ * REQUEST_SYNCHRONIZATION (13) is deliberately absent: Polar's only documented effect of the call
+ * that sends it is that it "will cause the device to flush the latest data to files"
+ * (polar-ble-sdk PolarBleApi.sendInitializationAndStartSyncNotifications), i.e. it changes stored
+ * data.
  */
 
 // The "Unknown Service" (0xFEEE, Polar Electro Oy SIG UUID) grouping fb005c51/52/53 -- see
@@ -54,10 +58,15 @@ internal const val PFTP_COMMAND_GET = 0x00
 // file. No PbPFtpQuery params are sent (GET_DISK_SPACE takes none).
 internal val DISK_SPACE_QUERY_BYTES = byteArrayOf(0x02, 0x05, 0x80.toByte())
 
-// Sentinel pseudo-path used purely to route the disk-space query through the same
-// path-keyed op-queue/reassembly/dispatch machinery as real GET requests (PolarGattClient,
-// classifyPftpPath). Guaranteed never to collide with a real device path -- every real PFTP path
-// starts with "/", this deliberately does not.
+// PbPFtpQuery.GET_EXERCISE_STATUS = 25 (0x19), same query framing, no params.
+internal val EXERCISE_STATUS_QUERY_BYTES = byteArrayOf(0x02, 0x19, 0x80.toByte())
+
+// RFC76 stream cancel (BlePsFtpClient.readResponse): status-0 header byte + zero error code.
+internal val STREAM_CANCEL_BYTES = byteArrayOf(0x00, 0x00, 0x00)
+
+// Label the disk-space query carries in logs/trace callbacks (Listener.onPftpRequestSent) and the
+// key classifyPftpPath maps to DISK_SPACE. Guaranteed never to collide with a real device path --
+// every real PFTP path starts with "/", this deliberately does not.
 const val DISK_SPACE_PSEUDO_PATH = "\$DISK_SPACE"
 
 internal val SESSION_INITIALIZE_BYTES = byteArrayOf(0x02, NOTIFICATION_INITIALIZE_SESSION.toByte())
@@ -69,11 +78,4 @@ internal val SESSION_TERMINATE_BYTES = byteArrayOf(0x02, NOTIFICATION_TERMINATE_
 internal val SESSION_STOP_SYNC_COMPLETED_BYTES =
     byteArrayOf(0x02, NOTIFICATION_STOP_SYNC.toByte(), 0x08, 0x01)
 
-// Every real PFTP GET response body (fb005c51 notify) starts with a single leading byte before its
-// protobuf payload -- PROTOCOL.md's "Request/response wire framing" section documents this for the
-// `02`-prefixed cases ("Responses ... begin with the same 02 byte, then either...") but that byte is
-// NOT always `0x02`: capture12's AUTOS001.BPB content response arrived with a leading `0x06` instead
-// (see HistoricalSyncActivity.stripResponseEnvelope, which strips it unconditionally rather than
-// checking for a fixed value). PolarGattClient's size-mismatch check accounts for it being one extra
-// byte on the wire beyond the listed file size, regardless of its value.
 class PftpProtocolException(message: String) : Exception(message)
