@@ -43,6 +43,13 @@ client.requestSynchronization { result -> }           // opt-in, see above
 client.readBatteryLevel { percent -> }
 ```
 
+The Loop's own messages on fb005c52 arrive on
+`Listener.onPftpDeviceNotification`, reassembled, outside any request; decode
+their params with `decodeExerciseStatusNotification`, `decodeSyncRequired` and
+the other `decode*` functions. `Listener.onPftpFrame` reports every incoming
+PFTP frame's RFC76 header (status, sequence, next bit, length, error code),
+never its payload. Log lines mask Bluetooth addresses to their last byte.
+
 Responses end on their RFC76 headers (LAST or a status-0 frame), never on a
 quiet gap. One request is in flight at a time across GETs, queries,
 session-control notifications, PMD commands and the battery read, so nothing
@@ -65,11 +72,11 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.3.0")
+    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.3.1")
 }
 ```
 
-`v1.3.0` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
+`v1.3.1` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
 [CHANGELOG.md](CHANGELOG.md). Check the
 [JitPack build log](https://jitpack.io/#Adri-Fa/polar-loop-protocol-android) if you pin a
 different one to confirm it actually built.
@@ -85,7 +92,9 @@ The PFTP response parser also runs over real Loop traffic in
 from Polar Loop Debugger exports, including a stream cut off mid-file. These
 are redacted to their framing. RFC76 headers, packet lengths and status-0
 frames are verbatim; payload bytes are replaced by their count, and paths are
-dropped. Run the suite with:
+dropped. `GattQueueBurstReplayTest` replays 30 more, the burst of overlapping
+requests a v1.1.4 build sent, through the request queue. Their paths and
+timings are synthetic. Run the suite with:
 
 ```
 ./gradlew test

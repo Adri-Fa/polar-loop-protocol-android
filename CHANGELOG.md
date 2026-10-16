@@ -1,5 +1,59 @@
 # Changelog
 
+## v1.3.1
+
+### Fixed
+- Every PFTP request has its own no-response timer. A timer acts only while
+  its request is current and is still that request's live timer, and it is
+  cancelled when the request completes. v1.3.0 shared one timer `Runnable`
+  across requests, so only a working `removeCallbacks` kept a stale timer
+  from timing out a later request early and cancelling its stream. Replaying
+  loopCompanion's v1.1.4 burst with `removeCallbacks` as a no-op, v1.3.0 timed
+  out 19 of 30 requests early. It still never wrote while a response streamed.
+  Now all 30 get their own answer.
+- Log lines no longer carry a full Bluetooth address. `connect()` logged
+  "connecting to <address>", and a Loop's address ends in part of its device
+  ID. Every line `PolarGattClient` and its queue log now goes through one
+  choke point that masks any address to `XX:XX:XX:XX:XX:<last byte>`.
+
+### Added
+- `Listener.onPftpDeviceNotification(PftpDeviceNotification)`: the Loop's own
+  messages on fb005c52, reassembled from RFC76 frames as polar-ble-sdk's
+  `waitForNotification` does. They have an `id`, a `name`
+  (`PftpDeviceNotificationId`, pftp_notification.proto), protobuf `params`
+  and `receivedAtMillis`. `ConnectionManager` fans them out and calls
+  `rawTraceHook("pftp_device_notification", params, name)`. They never enter
+  the request queue, so they can't end or extend a response in flight.
+  Params decoders: `decodeFilesystemModified`, `decodeTrainingSessionStatus`,
+  `decodeSyncRequired`, `decodeAutoSyncStatus`,
+  `decodeExerciseStatusNotification`.
+- `Listener.onPftpFrame(PftpFrameTrace)`: every incoming fb005c51/fb005c52
+  frame's RFC76 header (status, sequence, next bit, length, error code),
+  never its payload.
+- One log line per characteristic before its CCCD write:
+  `CCCD <uuid> handle=0xNNNN value=01 00` (`02 00` for the PMD control
+  point's indications). The handle is the characteristic's `instanceId`, so
+  a wire trace can match the CCCD write (usually handle N+1) to it.
+- `GattQueueBurstReplayTest`: loopCompanion's v1.1.4 burst
+  (`captures/lc-v114-burst.txt`: framing only, synthetic paths, synthetic
+  timings) replayed through the queue. One request in flight, no cut-offs,
+  one result per request, also with a leaky `removeCallbacks`. Also new:
+  `CccdLogLineTest`, `LogAddressMaskingTest` (scans every log call in
+  src/main), `PftpFrameTraceTest`, `PftpDeviceNotificationTest`, and
+  `GattQueueTest` pins for late timers and for error frames with nothing in
+  flight (logged, dropped, never the next request's answer).
+
+### Changed
+- A complete fb005c52 message logs `<- fb005c52 PftpDeviceNotification(<id>
+  <NAME>, <n> B)` instead of `PFTP event (fb005c52, unsolicited): <n> bytes`
+  per frame.
+
+### Known limit (not changed)
+- A device that sends more answers than requests: a stray status-0 frame that
+  arrives while the next request is in flight is taken as that request's
+  answer, since PFTP answers carry no request id. With nothing in flight it is
+  dropped. `GattQueueBurstReplayTest` documents this.
+
 ## v1.3.0
 
 ### Added
