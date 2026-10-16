@@ -254,11 +254,14 @@ class PolarGattClient(
 
     private fun enableAllNotifications(g: BluetoothGatt) {
         for (target in NotifyTarget.entries) {
-            if (findCharacteristic(g, target.uuid) == null) {
+            val characteristic = findCharacteristic(g, target.uuid)
+            if (characteristic == null) {
                 listener.onLog("${target.name} characteristic (${target.uuid}) not found")
                 continue
             }
-            queue.write(OutgoingFrame.EnableNotifications(target)) {}
+            val frame = OutgoingFrame.EnableNotifications(target)
+            listener.onLog(frame.logLine(characteristic.instanceId))
+            queue.write(frame) {}
         }
         if (findCharacteristic(g, PFTP_SESSION_CONTROL_UUID) == null) {
             listener.onLog("PFTP session-control characteristic (fb005c53) not found -- Historical Sync unavailable")

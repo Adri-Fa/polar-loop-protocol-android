@@ -60,6 +60,13 @@ sealed class OutgoingFrame(val characteristic: String, private val encoded: Byte
     class EnableNotifications(val target: NotifyTarget) :
         OutgoingFrame(target.uuid, if (target.indicate) CCCD_ENABLE_INDICATION else CCCD_ENABLE_NOTIFICATION) {
         override fun toString() = "enable ${if (target.indicate) "indications" else "notifications"} on ${target.name}"
+
+        /**
+         * The line logged before this CCCD write: UUID, the characteristic's ATT handle (its
+         * instanceId) and the value written. A wire trace shows the write on the CCCD's own handle,
+         * usually [handle] + 1. Nothing but the target and the handle reaches it: no payload, no address.
+         */
+        fun logLine(handle: Int) = "CCCD ${target.uuid} handle=${"0x%04X".format(handle)} value=${bytes.toHex()}"
     }
 }
 
