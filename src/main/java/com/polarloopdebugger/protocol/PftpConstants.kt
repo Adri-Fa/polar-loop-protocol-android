@@ -33,8 +33,8 @@ const val PFTP_SERVICE_UUID = "0000feee-0000-1000-8000-00805f9b34fb"
 // Request/response channel: client writes a path, device notifies back the response.
 const val PFTP_REQUEST_RESPONSE_UUID = "fb005c51-02e7-f387-1cad-8acd2d8df0c8"
 
-// Unsolicited device->app event push (e.g. sleep_recording_state). Not used for GET traffic;
-// logged if seen, per PROTOCOL.md's "surface every request/response in a visible log" ask.
+// Unsolicited device->app messages (PbPFtpDevToHostNotification). Not used for GET traffic;
+// reassembled by PftpDeviceNotificationReader and delivered via Listener.onPftpDeviceNotification.
 const val PFTP_EVENT_UUID = "fb005c52-02e7-f387-1cad-8acd2d8df0c8"
 
 // Session-control channel: short (2-4 byte) writes only, never carries path/JSON data.

@@ -1,8 +1,11 @@
 package com.polarloopdebugger.ble
 
 import com.polarloopdebugger.protocol.OutgoingFrame
+import com.polarloopdebugger.protocol.PftpDeviceNotification
+import com.polarloopdebugger.protocol.PftpDeviceNotificationReader
 import com.polarloopdebugger.protocol.PftpResult
 import com.polarloopdebugger.protocol.hex
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -224,5 +227,32 @@ class GattQueueTest {
         ack()
         packet("02 0A")
         assertEquals(listOf<PftpResult>(PftpResult.Content(hex("09")), PftpResult.Content(hex("0A"))), results)
+    }
+
+    /**
+     * PolarGattClient sends fb005c52 frames to its PftpDeviceNotificationReader, never into the
+     * queue (checked in its source below). Fed to the queue, either message here would break the GET:
+     * the first is a sequence-0 frame mid-stream, the second's LAST would end it early.
+     */
+    @Test
+    fun `a fb005c52 message arriving mid-GET leaves the GET's result unchanged`() {
+        val client = File("src/main/java/com/polarloopdebugger/ble/PolarGattClient.kt").readText()
+        val branch = { name: String -> client.substringAfter("$name -> {").substringBefore("\n            }") }
+        assertTrue(branch("PFTP_EVENT"), "deviceNotifications.accept(value)" in branch("PFTP_EVENT") && "queue" !in branch("PFTP_EVENT"))
+        assertTrue(branch("PFTP_REQUEST_RESPONSE"), "queue.onPacket(value)" in branch("PFTP_REQUEST_RESPONSE"))
+
+        val notifications = mutableListOf<PftpDeviceNotification>()
+        val reader = PftpDeviceNotificationReader(port.logs::add) { 0L }
+        get("/A"); port.drain(); ack()
+        packet("06 01")
+        reader.accept(hex("02 13 08 01 10 01"))?.let(notifications::add) // one-frame EXERCISE_STATUS
+        reader.accept(hex("06 12 0A 01")) // REST_API_EVENT, first frame
+        packet("17 02")
+        reader.accept(hex("13 05"))?.let(notifications::add) // its LAST
+        assertTrue(results.isEmpty())
+        packet("23 03")
+        assertEquals(listOf<PftpResult>(PftpResult.Content(hex("01 02 03"))), results)
+        assertEquals(listOf(19, 18), notifications.map { it.id })
+        assertTrue(port.logs.toString(), port.logs.isEmpty())
     }
 }

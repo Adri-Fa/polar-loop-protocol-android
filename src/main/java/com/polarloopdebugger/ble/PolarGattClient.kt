@@ -25,6 +25,8 @@ import com.polarloopdebugger.protocol.PFTP_REQUEST_RESPONSE_UUID
 import com.polarloopdebugger.protocol.PFTP_SESSION_CONTROL_UUID
 import com.polarloopdebugger.protocol.PMD_CONTROL_POINT_UUID
 import com.polarloopdebugger.protocol.PMD_DATA_UUID
+import com.polarloopdebugger.protocol.PftpDeviceNotification
+import com.polarloopdebugger.protocol.PftpDeviceNotificationReader
 import com.polarloopdebugger.protocol.PftpFrameTrace
 import com.polarloopdebugger.protocol.PftpResult
 import com.polarloopdebugger.protocol.PmdProtocolException
@@ -76,6 +78,10 @@ class PolarGattClient(
         // Every incoming fb005c51/fb005c52 frame's RFC76 header, before the frame is processed:
         // status, sequence, next bit, length and error code, never its payload.
         fun onPftpFrame(frame: PftpFrameTrace) {}
+
+        // The Loop's own messages on fb005c52 (FILESYSTEM_MODIFIED, SYNC_REQUIRED, EXERCISE_STATUS,
+        // ...), reassembled. Unsolicited: they arrive outside any request, whenever the Loop sends them.
+        fun onPftpDeviceNotification(notification: PftpDeviceNotification) {}
     }
 
     // Only set while an owned background thread is alive. The Handler is cached with it: every
@@ -105,6 +111,9 @@ class PolarGattClient(
 
     // Touched only on the callback thread. ATT's default until onMtuChanged reports otherwise.
     private var mtu = DEFAULT_ATT_MTU
+
+    // Touched only on the callback thread, reset with mtu on every new link.
+    private val deviceNotifications = PftpDeviceNotificationReader(::log)
 
     private val queue = GattQueue(
         object : GattQueue.Port {
@@ -335,11 +344,14 @@ class PolarGattClient(
                 trace(PFTP_REQUEST_RESPONSE_UUID, value)
                 queue.onPacket(value)
             }
-            // fb005c52: unsolicited device->app push, effectively unused (PROTOCOL.md: only one
-            // notification ever seen, a sleep_recording_state push) -- just log it.
+            // fb005c52: the Loop's own messages, unsolicited. Never into the queue, so they can't end
+            // or extend a response in flight (GattQueueTest pins this routing).
             PFTP_EVENT -> {
                 trace(PFTP_EVENT_UUID, value)
-                log("PFTP event (fb005c52, unsolicited): ${value.size} bytes")
+                deviceNotifications.accept(value)?.let { notification ->
+                    log("<- fb005c52 $notification")
+                    listener.onPftpDeviceNotification(notification)
+                }
             }
             else -> log("notification from unknown characteristic $uuid: ${value.size} bytes")
         }
@@ -352,6 +364,7 @@ class PolarGattClient(
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     mtu = DEFAULT_ATT_MTU
+                    deviceNotifications.reset()
                     listener.onConnectionStateChanged(true)
                     g.requestMtu(REQUIRED_ATT_MTU)
                 }

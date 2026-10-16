@@ -6,6 +6,7 @@ import com.polarloopdebugger.protocol.ControlPointResponse
 import com.polarloopdebugger.protocol.DataFrame
 import com.polarloopdebugger.protocol.HrMeasurement
 import com.polarloopdebugger.protocol.MeasurementType
+import com.polarloopdebugger.protocol.PftpDeviceNotification
 import com.polarloopdebugger.protocol.PftpFrameTrace
 import com.polarloopdebugger.protocol.PftpResult
 import com.polarloopdebugger.protocol.SyncGate
@@ -148,5 +149,10 @@ object ConnectionManager : PolarGattClient.Listener {
 
     override fun onPftpFrame(frame: PftpFrameTrace) {
         listeners.forEach { it.onPftpFrame(frame) }
+    }
+
+    override fun onPftpDeviceNotification(notification: PftpDeviceNotification) {
+        rawTraceHook("pftp_device_notification", notification.params, notification.name)
+        listeners.forEach { it.onPftpDeviceNotification(notification) }
     }
 }
