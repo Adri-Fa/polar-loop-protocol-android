@@ -112,14 +112,18 @@ class PolarGattClient(
             override fun write(frame: OutgoingFrame) = writeFrame(frame)
             override fun read(characteristic: String) = readCharacteristic(characteristic)
             override fun maxWriteSize() = mtu - 3
-            override fun log(message: String) = listener.onLog(message)
+            override fun log(message: String) = this@PolarGattClient.log(message)
         },
         pftpPacketTimeoutMs,
     )
 
+    // The only call to listener.onLog: every line this class and its GattQueue log goes through here,
+    // so no line can carry a full Bluetooth address (LogAddressMaskingTest holds every log call to it).
+    private fun log(message: String) = listener.onLog(maskBluetoothAddresses(message))
+
     @SuppressLint("MissingPermission") // caller checks BLUETOOTH_CONNECT first
     fun connect(device: BluetoothDevice) {
-        listener.onLog("connecting to ${device.address}...")
+        log("connecting to ${maskBluetoothAddresses(device.address)}...")
         val handler = synchronized(this) { currentCallbackHandler() }
         // transport=TRANSPORT_AUTO, phy=PHY_LE_1M_MASK are connectGatt's own defaults for the
         // handler-less overload -- passed explicitly only because the Handler param requires this
@@ -192,7 +196,7 @@ class PolarGattClient(
         }
 
     private fun deliver(frame: OutgoingFrame, result: PftpResult, onResult: (PftpResult) -> Unit) {
-        listener.onLog("<- PFTP $frame: $result")
+        log("<- PFTP $frame: $result")
         listener.onPftpResult(frame.toString(), result)
         onResult(result)
     }
@@ -205,13 +209,13 @@ class PolarGattClient(
     private fun writeFrame(frame: OutgoingFrame): Boolean {
         val g = gatt ?: return false
         val characteristic = findCharacteristic(g, frame.characteristic) ?: run {
-            listener.onLog("ERROR: ${frame.characteristic} not found, cannot send $frame")
+            log("ERROR: ${frame.characteristic} not found, cannot send $frame")
             return false
         }
         val ok = if (frame is OutgoingFrame.EnableNotifications) {
             g.setCharacteristicNotification(characteristic, true)
             val descriptor = characteristic.getDescriptor(CCCD) ?: run {
-                listener.onLog("ERROR: no CCCD (0x2902) on ${characteristic.uuid}")
+                log("ERROR: no CCCD (0x2902) on ${characteristic.uuid}")
                 return false
             }
             writeDescriptorCompat(g, descriptor, frame.bytes)
@@ -225,7 +229,7 @@ class PolarGattClient(
             writeCharacteristicCompat(g, characteristic, frame.bytes, writeType)
         }
         if (ok) {
-            listener.onLog("-> $frame")
+            log("-> $frame")
             when {
                 frame is OutgoingFrame.EnableNotifications -> Unit
                 frame.characteristic == PFTP_SESSION_CONTROL_UUID -> listener.onPftpSessionControlSent(frame.bytes)
@@ -256,18 +260,18 @@ class PolarGattClient(
         for (target in NotifyTarget.entries) {
             val characteristic = findCharacteristic(g, target.uuid)
             if (characteristic == null) {
-                listener.onLog("${target.name} characteristic (${target.uuid}) not found")
+                log("${target.name} characteristic (${target.uuid}) not found")
                 continue
             }
             val frame = OutgoingFrame.EnableNotifications(target)
-            listener.onLog(frame.logLine(characteristic.instanceId))
+            log(frame.logLine(characteristic.instanceId))
             queue.write(frame) {}
         }
         if (findCharacteristic(g, PFTP_SESSION_CONTROL_UUID) == null) {
-            listener.onLog("PFTP session-control characteristic (fb005c53) not found -- Historical Sync unavailable")
+            log("PFTP session-control characteristic (fb005c53) not found -- Historical Sync unavailable")
         }
         queue.run {
-            listener.onLog("all notifications/indications enabled, ready for commands")
+            log("all notifications/indications enabled, ready for commands")
             listener.onReadyForCommands()
         }
     }
@@ -306,30 +310,30 @@ class PolarGattClient(
             PMD_CONTROL_POINT -> try {
                 listener.onControlPointResponse(parseControlPointResponse(value), value)
             } catch (e: PmdProtocolException) {
-                listener.onLog("ERROR parsing control point response: ${e.message} raw=${value.toHex()}")
+                log("ERROR parsing control point response: ${e.message} raw=${value.toHex()}")
             }
             PMD_DATA -> try {
                 listener.onDataFrame(decodeDataFrame(value), value)
             } catch (e: Exception) {
-                listener.onLog("ERROR decoding data frame: ${e.message} raw=${value.toHex()}")
+                log("ERROR decoding data frame: ${e.message} raw=${value.toHex()}")
             }
             HR_MEASUREMENT -> try {
                 listener.onHrMeasurement(parseHrMeasurement(value), value)
             } catch (e: Exception) {
-                listener.onLog("ERROR parsing HR measurement: ${e.message} raw=${value.toHex()}")
+                log("ERROR parsing HR measurement: ${e.message} raw=${value.toHex()}")
             }
             PFTP_REQUEST_RESPONSE -> queue.onPacket(value)
             // fb005c52: unsolicited device->app push, effectively unused (PROTOCOL.md: only one
             // notification ever seen, a sleep_recording_state push) -- just log it.
-            PFTP_EVENT -> listener.onLog("PFTP event (fb005c52, unsolicited): ${value.size} bytes")
-            else -> listener.onLog("notification from unknown characteristic $uuid: ${value.size} bytes")
+            PFTP_EVENT -> log("PFTP event (fb005c52, unsolicited): ${value.size} bytes")
+            else -> log("notification from unknown characteristic $uuid: ${value.size} bytes")
         }
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-            listener.onLog("connection state changed: status=$status newState=$newState")
+            log("connection state changed: status=$status newState=$newState")
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     mtu = DEFAULT_ATT_MTU
@@ -345,10 +349,10 @@ class PolarGattClient(
 
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-            listener.onLog("MTU changed: mtu=$mtu status=$status")
+            log("MTU changed: mtu=$mtu status=$status")
             if (status == BluetoothGatt.GATT_SUCCESS) this@PolarGattClient.mtu = mtu
             if (this@PolarGattClient.mtu < REQUIRED_ATT_MTU) {
-                listener.onLog(
+                log(
                     "WARNING: negotiated MTU ${this@PolarGattClient.mtu} is below the required $REQUIRED_ATT_MTU; " +
                         "REQUEST_MEASUREMENT_START will likely fail with ERROR_INVALID_MTU, and PFTP " +
                         "requests longer than ${this@PolarGattClient.mtu - 3} bytes end as Cancelled",
@@ -358,9 +362,9 @@ class PolarGattClient(
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-            listener.onLog("services discovered: status=$status")
+            log("services discovered: status=$status")
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                listener.onLog("ERROR: service discovery failed with GATT status $status")
+                log("ERROR: service discovery failed with GATT status $status")
                 return
             }
             enableAllNotifications(g)
@@ -428,3 +432,11 @@ class PolarGattClient(
         private val PFTP_EVENT: UUID = UUID.fromString(PFTP_EVENT_UUID)
     }
 }
+
+private val BLUETOOTH_ADDRESS = Regex("""\b(?:[0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})\b""")
+
+/**
+ * Every Bluetooth address in [text] down to its last byte, "XX:XX:XX:XX:XX:5F": a Loop's address
+ * ends in part of its device ID, and log lines end up in bugreports. Times and paths don't match.
+ */
+internal fun maskBluetoothAddresses(text: String): String = BLUETOOTH_ADDRESS.replace(text, "XX:XX:XX:XX:XX:$1")
