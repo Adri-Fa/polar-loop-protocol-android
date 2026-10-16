@@ -56,6 +56,32 @@ enum class PftpError(val code: Int) {
 }
 
 /**
+ * One incoming PFTP frame's RFC76 header, for tracing -- never its payload. [characteristic] is
+ * fb005c51 or fb005c52, [status] 0..3 (1 LAST, 3 MORE, 0 error/response), [next] 0 on a message's
+ * first frame, [length] the whole frame in bytes, header included, and [errorCode] a status-0
+ * frame's little-endian u16 (null on other frames, or one too short to carry it).
+ */
+data class PftpFrameTrace(
+    val characteristic: String,
+    val status: Int,
+    val sequence: Int,
+    val next: Int,
+    val length: Int,
+    val errorCode: Int?,
+) {
+    companion object {
+        /** null for a zero-length frame: it has no header, and every reader drops it. */
+        fun of(characteristic: String, frame: ByteArray): PftpFrameTrace? {
+            if (frame.isEmpty()) return null
+            val header = frame[0].toInt() and 0xFF
+            val status = (header shr 1) and 0x03
+            val code = if (status == 0 && frame.size >= 3) littleEndianUInt16(frame, 1) else null
+            return PftpFrameTrace(characteristic, status, (header shr 4) and 0x0F, header and 0x01, frame.size, code)
+        }
+    }
+}
+
+/**
  * Reassembles one PFTP response from fb005c51 notification packets by reading every packet's
  * 1-byte RFC76 header, exactly as Polar's SDK does (BlePsFtpUtils.processRfc76MessageFrameHeader,
  * BlePsFtpUtils.kt:166-183; BlePsFtpClient.readResponse):
