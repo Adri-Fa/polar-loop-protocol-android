@@ -10,21 +10,28 @@ import org.junit.Test
 /** Single-threaded, step-by-step [GattQueue] behavior. Concurrency is GattQueueStressTest's job. */
 class GattQueueTest {
 
-    /** A hand-cranked callback thread: posted work runs on [drain], delayed work on [advance]. */
+    /**
+     * A hand-cranked callback thread: posted work runs on [drain], delayed work on [advance].
+     * [leaky] makes removeCallbacks a no-op, the v1.1.1-v1.1.4 bug class (a new Handler per call).
+     */
     private class ManualPort(var maxWrite: Int = 495) : GattQueue.Port {
         val writes = mutableListOf<OutgoingFrame>()
+        val logs = mutableListOf<String>()
         var acceptWrites = true
+        var leaky = false
         private val ready = ArrayDeque<Runnable>()
         private val delayed = mutableListOf<Pair<Long, Runnable>>()
         private var now = 0L
 
         override fun post(r: Runnable) { ready.addLast(r) }
         override fun postDelayed(r: Runnable, delayMs: Long) { delayed += (now + delayMs) to r }
-        override fun removeCallbacks(r: Runnable) { delayed.removeAll { it.second === r } }
+        override fun removeCallbacks(r: Runnable) { if (!leaky) delayed.removeAll { it.second === r } }
         override fun write(frame: OutgoingFrame) = acceptWrites.also { if (it) writes += frame }
         override fun read(characteristic: String) = true
         override fun maxWriteSize() = maxWrite
-        override fun log(message: String) {}
+        override fun log(message: String) { logs += message }
+
+        val pendingTimers get() = delayed.size
 
         fun drain() { while (ready.isNotEmpty()) ready.removeFirst().run() }
         fun advance(ms: Long) {
@@ -155,5 +162,67 @@ class GattQueueTest {
         assertEquals(OutgoingFrame.StopSyncCompleted, port.writes.last())
         ack()
         assertTrue(done)
+    }
+
+    @Test
+    fun `a late timer from a finished request can never time out the next one`() {
+        port.leaky = true
+        get("/A"); get("/B"); port.drain(); ack() // /A's timer: due at 1000
+        port.advance(900)
+        packet("02 01") // /A done; /B written at 900
+        ack()
+        port.advance(100) // /A's stale timer runs while /B is in flight
+        assertEquals(listOf<PftpResult>(PftpResult.Content(hex("01"))), results)
+        assertEquals(listOf("/A", "/B"), port.writes.map { it.toString() }) // no StreamCancel
+        packet("02 02")
+        assertEquals(listOf<PftpResult>(PftpResult.Content(hex("01")), PftpResult.Content(hex("02"))), results)
+    }
+
+    @Test
+    fun `a re-armed timer replaces its request's earlier one, and the live one still fires`() {
+        port.leaky = true
+        get("/A"); port.drain(); ack() // due at 1000
+        port.advance(900)
+        packet("06 01") // re-armed: due at 1900
+        port.advance(100) // the first arm runs, stale
+        assertTrue(results.isEmpty())
+        port.advance(800)
+        packet("13 02")
+        assertEquals(listOf<PftpResult>(PftpResult.Content(hex("01 02"))), results)
+        get("/B"); port.drain(); ack()
+        port.advance(1_000)
+        assertEquals(PftpResult.Timeout, results.last())
+    }
+
+    @Test
+    fun `a request's timer is cancelled when the request completes`() {
+        get("/A"); port.drain(); ack()
+        assertEquals(1, port.pendingTimers)
+        packet("06 01")
+        assertEquals(1, port.pendingTimers) // re-armed, not added
+        packet("13 02")
+        assertEquals(0, port.pendingTimers)
+        get("/B"); port.drain(); queue.onWriteComplete(false); port.drain() // write failure ends it too
+        assertEquals(0, port.pendingTimers)
+    }
+
+    @Test
+    fun `an error frame with nothing in flight is logged, ignored, and never completes the next request`() {
+        packet("00 C8 00") // 200, nothing in flight
+        assertTrue(port.logs.single(), port.logs.single().contains("dropped"))
+        get("/A"); port.drain(); ack()
+        packet("02 05")
+        assertEquals(listOf<PftpResult>(PftpResult.Content(hex("05"))), results)
+    }
+
+    @Test
+    fun `an error frame after a request is answered, before its write ack, is ignored too`() {
+        get("/A"); get("/B"); port.drain()
+        packet("02 09") // /A answered, its write not yet acked: still in flight, nothing pending
+        packet("00 C8 00")
+        assertTrue(port.logs.single(), port.logs.single().contains("dropped"))
+        ack()
+        packet("02 0A")
+        assertEquals(listOf<PftpResult>(PftpResult.Content(hex("09")), PftpResult.Content(hex("0A"))), results)
     }
 }

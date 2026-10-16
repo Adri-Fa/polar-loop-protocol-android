@@ -48,11 +48,11 @@ internal class GattQueue(private val port: Port, private val packetTimeoutMs: Lo
         var answered = false
         var cancelPending = false // stream broken: StreamCancel goes out once our own write is acked
         var cancelling = false // StreamCancel written, waiting for its ack
+        var timer: Runnable? = null // the live no-response timer; any other one of this request's is stale
     }
 
     private val queue = ArrayDeque<Op>()
     private var current: Op? = null
-    private val timeout = Runnable { synchronized(this) { onTimeout() } }
 
     fun write(frame: OutgoingFrame, onDone: (Boolean) -> Unit) = submit(Write(frame, onDone))
     fun read(characteristic: String, onDone: (ByteArray?) -> Unit) = submit(Read(characteristic, onDone))
@@ -80,7 +80,7 @@ internal class GattQueue(private val port: Port, private val packetTimeoutMs: Lo
                 else -> {
                     op.writeAcked = true
                     if (!success && !op.answered) {
-                        port.removeCallbacks(timeout)
+                        disarm(op)
                         answer(op, PftpResult.Cancelled("write of ${op.frame} failed"))
                         current = null
                     } else if (op.cancelPending) {
@@ -113,9 +113,9 @@ internal class GattQueue(private val port: Port, private val packetTimeoutMs: Lo
             port.log("fb005c51 packet with no response pending, dropped (${packet.size} bytes)")
             return@locked
         }
-        port.removeCallbacks(timeout)
+        disarm(op)
         when (val step = op.reader.accept(packet)) {
-            PftpResponseReader.Step.NeedMore -> port.postDelayed(timeout, packetTimeoutMs)
+            PftpResponseReader.Step.NeedMore -> arm(op)
             is PftpResponseReader.Step.Done -> {
                 answer(op, step.result)
                 if (op.writeAcked) current = null
@@ -132,7 +132,7 @@ internal class GattQueue(private val port: Port, private val packetTimeoutMs: Lo
 
     /** Disconnect or dispose: every in-flight and queued op gets its one result now. */
     fun cancelAll(reason: String) = locked {
-        port.removeCallbacks(timeout)
+        (current as? Request)?.let(::disarm)
         val ops = listOfNotNull(current) + queue
         current = null
         queue.clear()
@@ -169,7 +169,7 @@ internal class GattQueue(private val port: Port, private val packetTimeoutMs: Lo
                         current = null
                         answer(op, PftpResult.Cancelled(failure))
                     } else {
-                        port.postDelayed(timeout, packetTimeoutMs)
+                        arm(op)
                     }
                 }
             }
@@ -195,8 +195,29 @@ internal class GattQueue(private val port: Port, private val packetTimeoutMs: Lo
         }
     }
 
-    private fun onTimeout() {
-        val op = current as? Request ?: return
+    /**
+     * Starts [op]'s no-response timer, replacing its previous one. A timer belongs to its request:
+     * it acts only while that request is current and the timer is still its live one, so a late
+     * one -- removeCallbacks missed it, or it was already running -- can't time out the next request.
+     */
+    private fun arm(op: Request) {
+        disarm(op)
+        val timer = object : Runnable {
+            override fun run() = synchronized(this@GattQueue) {
+                if (current === op && op.timer === this) onTimeout(op)
+            }
+        }
+        op.timer = timer
+        port.postDelayed(timer, packetTimeoutMs)
+    }
+
+    private fun disarm(op: Request) {
+        op.timer?.let(port::removeCallbacks)
+        op.timer = null
+    }
+
+    private fun onTimeout(op: Request) {
+        op.timer = null
         if (op.answered) return
         port.log("ERROR: no PFTP packet for ${op.frame} within ${packetTimeoutMs}ms, cancelling stream")
         answer(op, PftpResult.Timeout)
