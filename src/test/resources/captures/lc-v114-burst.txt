@@ -1,0 +1,42 @@
+# Redacted from the loopCompanion sync (PLPA v1.1.4) whose overlapping GETs preceded the Loop's
+# SYSTEM_BUSY run (loopCompanion Workpackages.md, Reset investigation). <source> = record number of
+# the wire decode, records 387-490 of the session; <request> = the request, with a synthetic path.
+# One fb005c51 response per line: <source> <request> <expected> <packet> <packet> ...
+#   <packet> = HH+N  header byte HH, then N payload bytes (redacted: the test fills them with zeros)
+#            | HH:CCCC  a status-0 frame, verbatim: header byte HH, error code bytes CCCC
+#   <expected> = CONTENT:<bytes> | EMPTY | ERROR:<code>
+# Headers, lengths and status-0 frames are the decode's, each answer paired with a request in arrival
+# order. Synthetic: every path (day folders 20240101-20240106 stand in for the real six days; one
+# day's NR.BPB was never written, so it isn't here), and the frames after "06+494" in 433, 452 and
+# 465. Those three were cut after their first frame on the wire, so their LAST never existed; the
+# replay asserts they reach one. No timings: the replay test supplies its own.
+387 QUERY5 CONTENT:9 02+9
+392 /U/0/ CONTENT:408 02+408
+399 /U/0/AUTOS/ CONTENT:314 02+314
+403 /U/0/20240101/DSUM/DSUM.BPB CONTENT:149 02+149
+412 /U/0/20240101/NR/NR.BPB ERROR:103 00:6700
+416 /U/0/20240101/SLEEP/SLEEPRES.BPB ERROR:103 00:6700
+420 /U/0/20240101/SKINTEMP/TEMPCONT.BPB CONTENT:1668 06+494 17+494 27+31 37+494 43+155
+430 /U/0/20240101/ACT/ CONTENT:18 02+18
+432 /U/0/20240102/DSUM/DSUM.BPB CONTENT:149 02+149
+433 /U/0/20240102/SLEEP/SLEEPRES.BPB CONTENT:1088 06+494 17+494 23+100
+435 /U/0/20240102/SKINTEMP/TEMPCONT.BPB ERROR:100 00:6400
+436 /U/0/20240102/ACT/ CONTENT:19 02+19
+446 /U/0/20240103/DSUM/DSUM.BPB CONTENT:149 02+149
+447 /U/0/20240103/NR/NR.BPB ERROR:103 00:6700
+451 /U/0/20240103/SLEEP/SLEEPRES.BPB ERROR:103 00:6700
+452 /U/0/20240103/SKINTEMP/TEMPCONT.BPB CONTENT:1088 06+494 17+494 23+100
+453 /U/0/20240103/ACT/ ERROR:100 00:6400
+455 /U/0/20240104/DSUM/DSUM.BPB CONTENT:149 02+149
+464 /U/0/20240104/NR/NR.BPB CONTENT:159 02+159
+465 /U/0/20240104/SLEEP/SLEEPRES.BPB CONTENT:1088 06+494 17+494 23+100
+466 /U/0/20240104/SKINTEMP/TEMPCONT.BPB ERROR:100 00:6400
+471 /U/0/20240104/ACT/ ERROR:200 00:c800
+472 /U/0/20240105/DSUM/DSUM.BPB ERROR:202 00:ca00
+473 /U/0/20240105/NR/NR.BPB ERROR:202 00:ca00
+474 /U/0/20240105/SLEEP/SLEEPRES.BPB ERROR:202 00:ca00
+484 /U/0/20240105/SKINTEMP/TEMPCONT.BPB ERROR:202 00:ca00
+487 /U/0/20240105/ACT/ ERROR:202 00:ca00
+488 /U/0/20240106/DSUM/DSUM.BPB ERROR:202 00:ca00
+489 /U/0/20240106/NR/NR.BPB ERROR:202 00:ca00
+490 /U/0/20240106/SLEEP/SLEEPRES.BPB ERROR:202 00:ca00

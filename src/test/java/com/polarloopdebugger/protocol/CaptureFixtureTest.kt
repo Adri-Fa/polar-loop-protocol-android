@@ -20,25 +20,8 @@ class CaptureFixtureTest {
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .map { line ->
                 val parts = line.split(" ")
-                Exchange(parts[0], parts[1], parts[2], parts.drop(3).map(::packet))
+                Exchange(parts[0], parts[1], parts[2], parts.drop(3).map(::fixturePacket))
             }
-
-    // "HH+N" = header HH and N (redacted, zero) payload bytes; "HH:CCCC" = verbatim status-0 frame.
-    private fun packet(token: String): ByteArray =
-        if ('+' in token) {
-            val (header, n) = token.split('+')
-            ByteArray(n.toInt() + 1).also { it[0] = header.toInt(16).toByte() }
-        } else {
-            token.replace(":", "").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        }
-
-    private fun expectedOf(expected: String): PftpResult? = when {
-        expected == "NONE" -> null
-        expected == "EMPTY" -> PftpResult.Empty
-        expected.startsWith("CONTENT:") -> PftpResult.Content(ByteArray(expected.removePrefix("CONTENT:").toInt()))
-        expected.startsWith("ERROR:") -> PftpResult.DeviceError(expected.removePrefix("ERROR:").toInt())
-        else -> error("unknown expectation $expected")
-    }
 
     /** The result, or null if the stream ended without a terminating packet. Fails on anything after it. */
     private fun parse(e: Exchange): PftpResult? {
@@ -60,7 +43,7 @@ class CaptureFixtureTest {
     fun `every Polar Flow response in capture9 parses to the independently derived outcome`() {
         val exchanges = load("capture9-flow-sync.txt")
         assertEquals(332, exchanges.size)
-        for (e in exchanges) assertEquals("${e.source} ${e.request}", expectedOf(e.expected), parse(e))
+        for (e in exchanges) assertEquals("${e.source} ${e.request}", fixtureResult(e.expected), parse(e))
     }
 
     @Test
