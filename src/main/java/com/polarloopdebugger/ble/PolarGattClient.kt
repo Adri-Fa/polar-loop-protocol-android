@@ -28,6 +28,7 @@ import com.polarloopdebugger.protocol.PMD_DATA_UUID
 import com.polarloopdebugger.protocol.PftpDeviceNotification
 import com.polarloopdebugger.protocol.PftpDeviceNotificationReader
 import com.polarloopdebugger.protocol.PftpFrameTrace
+import com.polarloopdebugger.protocol.PftpRemoveTarget
 import com.polarloopdebugger.protocol.PftpResult
 import com.polarloopdebugger.protocol.PmdProtocolException
 import com.polarloopdebugger.protocol.REQUIRED_ATT_MTU
@@ -200,6 +201,16 @@ class PolarGattClient(
 
     /** Asks GET_EXERCISE_STATUS whether a sync can start now. Read-only: it writes nothing but query 25. */
     fun checkSyncGate(onResult: (SyncGate) -> Unit) = sendPftpExerciseStatusQuery { onResult(syncGateOf(it)) }
+
+    /**
+     * REMOVE (`08 03`) of [target], a day folder or a 24/7 file and nothing else (see
+     * PftpRemoveTarget). The one write that deletes data on the Loop. Explicit opt-in: nothing in
+     * this library ever calls it; a source tripwire in OutgoingFrameAllowListTest fails if that
+     * changes. Same one-in-flight queue and typed result as every other request: the Loop answered
+     * Polar Flow's REMOVEs in capture9 with a status-0 frame, i.e. PftpResult.Empty; a 103 means
+     * the item was not there.
+     */
+    fun sendPftpRemove(target: PftpRemoveTarget, onResult: (PftpResult) -> Unit) = request(OutgoingFrame.PftpRemove(target), onResult)
 
     private fun request(frame: OutgoingFrame, onResult: (PftpResult) -> Unit) =
         queue.request(frame) { result -> deliver(frame, result, onResult) }

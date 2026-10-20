@@ -7,10 +7,13 @@ package com.polarloopdebugger.protocol
  * (capture9/capture10, confirmed against the official polarofficial/polar-ble-sdk .proto
  * schema: pftp_request.proto, pftp_response.proto, pftp_notification.proto).
  *
- * READ-ONLY GUARANTEE: this file and [PftpCommands] together are the only code in this app that
- * can construct a PbPFtpOperation wire frame. There is no `Command` enum here with PUT/MERGE/
- * REMOVE values -- only the literal GET command byte (0x00) is ever written, hardcoded directly
- * into buildGetRequest. OutgoingFrameAllowListTest pins every byte string the library can emit.
+ * READ-ONLY GUARANTEE (with one gated exception): this file and [PftpCommands] together are the
+ * only code in this app that can construct a PbPFtpOperation wire frame. There is no `Command`
+ * enum here with PUT/MERGE values -- only the literal GET command byte (0x00), hardcoded into
+ * buildGetRequest, and since v1.4.0 the literal REMOVE byte (0x03), hardcoded into
+ * buildRemoveRequest, which accepts only a [PftpRemoveTarget] (a day folder or a 24/7 file) and
+ * is never called by the library itself. OutgoingFrameAllowListTest pins every byte string the
+ * library can emit.
  *
  * This also covers the three PbPFtpQuery ids this app can send (GET_DISK_SPACE=5,
  * GET_EXERCISE_STATUS=25, REQUEST_SYNCHRONIZATION=13): a Query is a structurally different wire
@@ -47,9 +50,10 @@ private const val NOTIFICATION_STOP_SYNC = 0x01
 private const val NOTIFICATION_INITIALIZE_SESSION = 0x08
 private const val NOTIFICATION_TERMINATE_SESSION = 0x09
 
-// The ONLY PbPFtpOperation.Command value this app is able to express. Deliberately not an enum
-// with GET/PUT/MERGE/REMOVE entries -- see PftpCommands.buildGetRequest.
+// The only two PbPFtpOperation.Command values this app is able to express. Deliberately not an
+// enum with GET/PUT/MERGE/REMOVE entries -- see PftpCommands.buildGetRequest/buildRemoveRequest.
 internal const val PFTP_COMMAND_GET = 0x00
+internal const val PFTP_COMMAND_REMOVE = 0x03
 
 // The ONLY PbPFtpQuery id value this app is able to express (pftp_request.proto's
 // PbPFtpQuery.GET_DISK_SPACE = 5). MessageType.QUERY framing (BlePsFtpUtils.kt in the real SDK):

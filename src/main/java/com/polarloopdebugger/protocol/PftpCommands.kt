@@ -4,19 +4,23 @@ package com.polarloopdebugger.protocol
  * PFTP command builders (writes to fb005c51 and fb005c53).
  *
  * HARD CONSTRAINT, enforced here at the code level, not just by convention: this file must never
- * gain a function capable of constructing a `PUT` (`08 01`) or `REMOVE` (`08 03`) PbPFtpOperation.
- * [buildGetRequest] is the only function that builds a request frame, and it hardcodes the
- * command byte to [PFTP_COMMAND_GET] -- there is no parameter, enum, or branch anywhere in this
- * file that could select a different command. The library only ever sends these bytes wrapped in
- * an [OutgoingFrame]; OutgoingFrameAllowListTest pins every byte string that type can produce.
+ * gain a function capable of constructing a `PUT` (`08 01`) or `MERGE` (`08 02`) PbPFtpOperation,
+ * nor a `REMOVE` (`08 03`) of an arbitrary path. Two functions build operation frames:
+ * [buildGetRequest], which hardcodes [PFTP_COMMAND_GET], and [buildRemoveRequest], which
+ * hardcodes [PFTP_COMMAND_REMOVE] and accepts only a [PftpRemoveTarget] -- a type that can hold
+ * exactly two path shapes (a day folder, a 24/7 file) and nothing else. There is no parameter,
+ * enum, or branch anywhere in this file that could select any other command or widen those
+ * shapes. The library only ever sends these bytes wrapped in an [OutgoingFrame];
+ * OutgoingFrameAllowListTest pins every byte string that type can produce.
  *
  * [buildDiskSpaceQuery], [buildExerciseStatusQuery] and [buildRequestSynchronization] build
  * PbPFtpQuery frames (a structurally different, id-based wire mechanism, see PftpConstants) rather
  * than PbPFtpOperations. Each takes no parameters and returns one fixed byte array, so none can be
  * repurposed to send any other PbPFtpQuery id.
  *
- * Real deletion/write support (REMOVE/PUT/MERGE) is intentionally out of scope for this phase --
- * a deliberate human decision, not a placeholder. See README.md.
+ * PUT and MERGE stay impossible to build -- a deliberate human decision, not a placeholder. REMOVE
+ * (v1.4.0) is sent only when the app asks for it; a source tripwire in OutgoingFrameAllowListTest
+ * fails if any code path inside the library calls it. See README.md.
  */
 
 /**
@@ -24,12 +28,23 @@ package com.polarloopdebugger.protocol
  * "Request/response wire framing (fb005c51, handle 0x0031)". Pinned against three real captured
  * frames in PftpCommandsTest (342, 459, 465).
  */
-fun buildGetRequest(path: String): ByteArray {
+fun buildGetRequest(path: String): ByteArray = buildOperation(PFTP_COMMAND_GET, path)
+
+/**
+ * `02 [len:u16 LE] 08 03 12 [pathlen:varint] [UTF-8 path]` -- the same framing as a GET with
+ * command 3. CAPTURE-VALIDATED against Polar Flow's own REMOVEs in capture9: a day folder
+ * (frame 5680, header `02 12 00 08 03 12 0e`) and a 24/7 file (frame 5091, header
+ * `02 1b 00 08 03 12 17`), each answered by the Loop with `00 00 00` (status-0 frame, error code
+ * OPERATION_SUCCEEDED, i.e. PftpResult.Empty). The path can only come from a [PftpRemoveTarget].
+ */
+fun buildRemoveRequest(target: PftpRemoveTarget): ByteArray = buildOperation(PFTP_COMMAND_REMOVE, target.path)
+
+private fun buildOperation(command: Int, path: String): ByteArray {
     val pathBytes = path.toByteArray(Charsets.UTF_8)
-    // Serialized PbPFtpOperation{command=GET, path=path}: field 1 tag+value (08 00), field 2
-    // tag+length-delimited string (12 <varint len> <path>). The command byte is the literal constant
-    // PFTP_COMMAND_GET -- there is no way to pass a different value in.
-    val message = byteArrayOf(0x08, PFTP_COMMAND_GET.toByte(), 0x12) + encodeVarint(pathBytes.size) + pathBytes
+    // Serialized PbPFtpOperation{command, path}: field 1 tag+value (08 cc), field 2 tag+length-
+    // delimited string (12 <varint len> <path>). `command` is one of the two literal constants
+    // above; this function is private, so nothing else can pass a value in.
+    val message = byteArrayOf(0x08, command.toByte(), 0x12) + encodeVarint(pathBytes.size) + pathBytes
     // RFC60 request header (BlePsFtpUtils.makeCompleteMessageStream): 15-bit LE length, top bit
     // clear -- a set top bit would mark the frame as a query instead.
     val len = message.size

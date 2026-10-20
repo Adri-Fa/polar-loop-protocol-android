@@ -67,6 +67,36 @@ class PftpCommandsTest {
         assertEquals(PftpResponseReader.Step.Done(PftpResult.Empty), PftpResponseReader().accept(hex("02")))
     }
 
+    /**
+     * REMOVE frames, framed like a GET with command 3. The 7-byte headers are byte-identical to
+     * Polar Flow's own REMOVEs in capture9: a day folder (frame 5680, path length 14) and a 24/7
+     * file (frame 5091, path length 23). The paths here are synthetic; only the framing is pinned.
+     */
+    @Test
+    fun `REMOVE request frames match Polar Flow's framing`() {
+        val day = buildRemoveRequest(PftpRemoveTarget.of("/U/0/20240229/")!!)
+        assertArrayEquals(hex("02 12 00 08 03 12 0e"), day.copyOfRange(0, 7))
+        assertArrayEquals("/U/0/20240229/".toByteArray(), day.copyOfRange(7, day.size))
+        assertEquals(21, day.size)
+
+        val autos = buildRemoveRequest(PftpRemoveTarget.of("/U/0/AUTOS/AUTOS004.BPB")!!)
+        assertArrayEquals(hex("02 1b 00 08 03 12 17"), autos.copyOfRange(0, 7))
+        assertArrayEquals("/U/0/AUTOS/AUTOS004.BPB".toByteArray(), autos.copyOfRange(7, autos.size))
+        assertEquals(30, autos.size)
+
+        // Only the command byte differs from a GET of the same path.
+        val get = buildGetRequest("/U/0/20240229/")
+        assertEquals(get.size, day.size)
+        assertEquals(listOf(4), get.indices.filter { get[it] != day[it] })
+        assertEquals(0x03, day[4].toInt())
+    }
+
+    /** capture9's REMOVEs were each answered with `00 00 00`: a status-0 frame, OPERATION_SUCCEEDED, Empty. */
+    @Test
+    fun `the Loop's answer to a REMOVE parses as Empty`() {
+        assertEquals(PftpResponseReader.Step.Done(PftpResult.Empty), PftpResponseReader().accept(hex("00 00 00")))
+    }
+
     @Test
     fun `stream cancel frame`() {
         assertArrayEquals(hex("00 00 00"), buildStreamCancel())

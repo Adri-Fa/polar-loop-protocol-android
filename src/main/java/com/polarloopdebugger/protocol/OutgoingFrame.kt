@@ -20,6 +20,15 @@ sealed class OutgoingFrame(val characteristic: String, private val encoded: Byte
         override fun toString() = path
     }
 
+    /**
+     * REMOVE of one day folder or one 24/7 file -- the only deletion the library can express, and
+     * only when the app asks (PolarGattClient.sendPftpRemove); nothing inside the library builds
+     * one. The target type is the whole guarantee: there is no REMOVE from a path string.
+     */
+    class PftpRemove(val target: PftpRemoveTarget) : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildRemoveRequest(target)) {
+        override fun toString() = target.toString()
+    }
+
     data object DiskSpaceQuery : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildDiskSpaceQuery()) {
         override fun toString() = DISK_SPACE_PSEUDO_PATH
     }
