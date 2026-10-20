@@ -10,12 +10,21 @@ standalone Android app that uses this library directly.
 No UI/Activity/Compose dependencies -- pure Kotlin + Android BLE/Health
 Connect APIs, usable from any Android app.
 
-**Read-only by design**: the library writes only `OutgoingFrame`s, a closed
-set of byte strings. `OutgoingFrameAllowListTest` lists every one of them per
-characteristic and fails if anything else becomes buildable. In particular,
-nothing can produce a PFTP PUT/MERGE/REMOVE, RESET (`02 02` on fb005c53), or a
-PMD opcode outside 1-3. This library can read a Polar Loop Gen 2's data; it
-cannot write to it, remove anything, or reconfigure it.
+**Read-only by design, except deletion of day folders and 24/7 files, only
+when the app explicitly requests it**: the library writes only
+`OutgoingFrame`s, a closed set of byte strings. `OutgoingFrameAllowListTest`
+lists every one of them per characteristic and fails if anything else becomes
+buildable. In particular, nothing can produce a PFTP PUT/MERGE, RESET (`02 02`
+on fb005c53), or a PMD opcode outside 1-3. This library can read a Polar Loop
+Gen 2's data; it cannot write to it or reconfigure it.
+
+The one deletion (v1.4.0): `sendPftpRemove(target)` sends a PFTP REMOVE
+(`08 03`, framed like a GET, the same frames Polar Flow sends after its own
+sync). `target` is a `PftpRemoveTarget`, a type that can hold exactly two path
+shapes and nothing else: a day folder `/U/0/YYYYMMDD/` with a real calendar
+date, or a 24/7 file `/U/0/AUTOS/AUTOSnnn.BPB`. There is no REMOVE from a path
+string, and the library never sends one on its own; a source tripwire fails if
+any code path besides that method can.
 
 One opt-in exception: `requestSynchronization()` sends REQUEST_SYNCHRONIZATION
 (`02 0D 80`, the request Polar Flow sends before it syncs). Polar documents it as
@@ -72,11 +81,11 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.3.1")
+    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.4.0")
 }
 ```
 
-`v1.3.1` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
+`v1.4.0` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
 [CHANGELOG.md](CHANGELOG.md). Check the
 [JitPack build log](https://jitpack.io/#Adri-Fa/polar-loop-protocol-android) if you pin a
 different one to confirm it actually built.

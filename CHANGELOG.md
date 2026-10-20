@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.4.0
+
+### Changed
+- Read-only, except deletion of day folders and 24/7 files, only when the app
+  explicitly requests it. `PolarGattClient.sendPftpRemove(target)` (and
+  `ConnectionManager.sendPftpRemove`) sends a PFTP REMOVE: command `08 03`,
+  framed exactly like a GET, byte-identical in its header to Polar Flow's own
+  REMOVEs in capture9 (a day folder, frame 5680; a 24/7 file, frame 5091). The
+  Loop answers with a status-0 frame, delivered as `PftpResult.Empty`; a 103
+  means the item was not there. Same one-in-flight queue and typed result as
+  every other request.
+- `PftpRemoveTarget`: the only input to a REMOVE. `PftpRemoveTarget.of(path)`
+  returns a `DayFolder` for `/U/0/YYYYMMDD/` with a real calendar date, an
+  `AutosFile` for `/U/0/AUTOS/AUTOSnnn.BPB` with exactly three digits, and null
+  for anything else: `/U/0/S/…`, `/SYS/…`, `DEVICE.BPB`, `USERID.BPB`, `/U/0/`,
+  `/`, `..`, lower case, trailing characters, 20261340. There is no REMOVE from
+  a path string.
+- `OutgoingFrame.PftpRemove(target)` joins the closed frame set.
+  `OutgoingFrameAllowListTest` pins its bytes, proves PUT and MERGE still
+  cannot be built and RESET still cannot be sent, rejects thousands of random
+  and mutated paths, and has a source tripwire: the library never calls REMOVE
+  on its own.
+
 ## v1.3.1
 
 ### Fixed
