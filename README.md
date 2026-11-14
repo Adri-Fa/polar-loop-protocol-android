@@ -10,8 +10,8 @@ standalone Android app that uses this library directly.
 No UI/Activity/Compose dependencies -- pure Kotlin + Android BLE/Health
 Connect APIs, usable from any Android app.
 
-**Read-only by design, except deletion of day folders and 24/7 files, only
-when the app explicitly requests it**: the library writes only
+**Read-only by design, except deletion of day folders and 24/7 files and
+setting the clock, each only when the app explicitly requests it**: the library writes only
 `OutgoingFrame`s, a closed set of byte strings. `OutgoingFrameAllowListTest`
 lists every one of them per characteristic and fails if anything else becomes
 buildable. In particular, nothing can produce a PFTP PUT/MERGE, RESET (`02 02`
@@ -25,6 +25,19 @@ shapes and nothing else: a day folder `/U/0/YYYYMMDD/` with a real calendar
 date, or a 24/7 file `/U/0/AUTOS/AUTOSnnn.BPB`. There is no REMOVE from a path
 string, and the library never sends one on its own; a source tripwire fails if
 any code path besides that method can.
+
+Day folders in Polar's SDK form (v1.5.0): `sendDayFolderRemoval(folder)` sends
+the same REMOVE for `/U/0/YYYYMMDD` with no trailing slash, the path polar-ble-sdk's
+`deleteDeviceDateFolders` writes. `folder` is an `SdkDayFolder`, made from a
+`LocalDate` only. Its own frame type, allow-list entry and source tripwire.
+
+Setting the clock (v1.5.0): `sendPftpSetTime(local, system)` sends query 3
+SET_LOCAL_TIME then query 1 SET_SYSTEM_TIME, back to back, byte-identical to
+the frames Polar Flow sends before INITIALIZE_SESSION on every sync. The params
+come only from a `LocalTimeSetting` (a `LocalDateTime` and a real UTC offset)
+and a `SystemTimeSetting` (an `Instant`, always sent as trusted). Their own frame
+types, allow-list entries and source tripwire. When to send is the app's
+decision; the library never does.
 
 One opt-in exception: `requestSynchronization()` sends REQUEST_SYNCHRONIZATION
 (`02 0D 80`, the request Polar Flow sends before it syncs). Polar documents it as
@@ -81,11 +94,11 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.4.0")
+    implementation("com.github.Adri-Fa:polar-loop-protocol-android:v1.5.0")
 }
 ```
 
-`v1.4.0` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
+`v1.5.0` is the latest released tag. v1.2.0 broke the 1.1.x PFTP API, see
 [CHANGELOG.md](CHANGELOG.md). Check the
 [JitPack build log](https://jitpack.io/#Adri-Fa/polar-loop-protocol-android) if you pin a
 different one to confirm it actually built.

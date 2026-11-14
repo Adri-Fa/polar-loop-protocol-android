@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.5.0
+
+### Added
+- Deletion of a day folder in Polar's SDK form, only when the app explicitly
+  requests it. `PolarGattClient.sendDayFolderRemoval(folder)` (and
+  `ConnectionManager.sendDayFolderRemoval`) sends a REMOVE of `/U/0/YYYYMMDD`
+  with **no trailing slash**: the path polar-ble-sdk's
+  `deleteDeviceDateFolders` writes (`path.trimEnd('/')`), documented there as
+  deleting the folder with all its sub-folders. `SdkDayFolder.of(LocalDate)` is
+  the only input (years 2000-2099); there is no way to it from a path string.
+  `OutgoingFrame.DayFolderRemoval` is its own frame type. v1.4.0's
+  `PftpRemoveTarget.DayFolder` (`/U/0/YYYYMMDD/`, as Polar Flow writes it) is
+  unchanged.
+- Setting the clock, only when the app explicitly requests it.
+  `PolarGattClient.sendPftpSetTime(local, system)` (and `ConnectionManager`'s)
+  queues query 3 SET_LOCAL_TIME then query 1 SET_SYSTEM_TIME back to back,
+  `02 03 80` / `02 01 80` + PbPFtpSetLocalTimeParams{date, time, tz_offset} /
+  PbPFtpSetSystemTimeParams{date, time (UTC), trusted = 1}, every field
+  written, zeros included. Checked byte for byte against Polar Flow's own
+  frames in two captures, read in place (each 3 + 22 B, sent before
+  INITIALIZE_SESSION). The inputs are `LocalTimeSetting.of(LocalDateTime,
+  offsetMinutes)` (years 2000-2099, offsets -12:00..+14:00 in quarter hours)
+  and `SystemTimeSetting.of(Instant)`; `OutgoingFrame.SetLocalTime` and
+  `SetSystemTime` are their own frame types. Western offsets go out as
+  protobuf int32, ten varint bytes.
+- `OutgoingFrameAllowListTest`: the three frames decoded independently and
+  compared with their inputs, for edge and random dates, times and offsets;
+  query ids limited to 1, 3, 5, 13 and 25, with 1 and 3 only from the time
+  frames; a source tripwire each for the day-folder removal and the time
+  setting: the library never calls either on its own.
+
+### Fixed
+- `PftpDeviceNotificationReader` drops a reassembled fb005c52 notification once
+  it passes 64 KiB (`MAX_NOTIFICATION_BYTES`), logging its size only. A
+  connected device that kept sending MORE frames could grow it until the
+  session ended.
+
 ## v1.4.0
 
 ### Changed
