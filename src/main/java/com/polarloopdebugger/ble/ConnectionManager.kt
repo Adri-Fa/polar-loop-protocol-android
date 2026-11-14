@@ -8,7 +8,10 @@ import com.polarloopdebugger.protocol.HrMeasurement
 import com.polarloopdebugger.protocol.MeasurementType
 import com.polarloopdebugger.protocol.PftpDeviceNotification
 import com.polarloopdebugger.protocol.PftpFrameTrace
+import com.polarloopdebugger.protocol.LocalTimeSetting
 import com.polarloopdebugger.protocol.PftpRemoveTarget
+import com.polarloopdebugger.protocol.SdkDayFolder
+import com.polarloopdebugger.protocol.SystemTimeSetting
 import com.polarloopdebugger.protocol.PftpResult
 import com.polarloopdebugger.protocol.SyncGate
 
@@ -100,6 +103,13 @@ object ConnectionManager : PolarGattClient.Listener {
 
     /** Opt-in deletion of one day folder or one 24/7 file; see PolarGattClient.sendPftpRemove. */
     fun sendPftpRemove(target: PftpRemoveTarget, onResult: (PftpResult) -> Unit) = client.sendPftpRemove(target, onResult)
+
+    /** v1.5.0 opt-in: see PolarGattClient.sendDayFolderRemoval. */
+    fun sendDayFolderRemoval(folder: SdkDayFolder, onResult: (PftpResult) -> Unit) = client.sendDayFolderRemoval(folder, onResult)
+
+    /** v1.5.0 opt-in: see PolarGattClient.sendPftpSetTime. */
+    fun sendPftpSetTime(local: LocalTimeSetting, system: SystemTimeSetting, onResult: (local: PftpResult, system: PftpResult) -> Unit) =
+        client.sendPftpSetTime(local, system, onResult)
 
     // -- PolarGattClient.Listener: fan out to every registered observer --
 

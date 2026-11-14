@@ -28,7 +28,10 @@ import com.polarloopdebugger.protocol.PMD_DATA_UUID
 import com.polarloopdebugger.protocol.PftpDeviceNotification
 import com.polarloopdebugger.protocol.PftpDeviceNotificationReader
 import com.polarloopdebugger.protocol.PftpFrameTrace
+import com.polarloopdebugger.protocol.LocalTimeSetting
 import com.polarloopdebugger.protocol.PftpRemoveTarget
+import com.polarloopdebugger.protocol.SdkDayFolder
+import com.polarloopdebugger.protocol.SystemTimeSetting
 import com.polarloopdebugger.protocol.PftpResult
 import com.polarloopdebugger.protocol.PmdProtocolException
 import com.polarloopdebugger.protocol.REQUIRED_ATT_MTU
@@ -211,6 +214,27 @@ class PolarGattClient(
      * the item was not there.
      */
     fun sendPftpRemove(target: PftpRemoveTarget, onResult: (PftpResult) -> Unit) = request(OutgoingFrame.PftpRemove(target), onResult)
+
+    /**
+     * v1.5.0: REMOVE of one day folder in Polar's SDK form, `/U/0/YYYYMMDD` (see SdkDayFolder).
+     * Explicit opt-in: nothing in this library ever calls it; a source tripwire in
+     * OutgoingFrameAllowListTest fails if that changes. A 103 means the folder was not there.
+     */
+    fun sendDayFolderRemoval(folder: SdkDayFolder, onResult: (PftpResult) -> Unit) = request(OutgoingFrame.DayFolderRemoval(folder), onResult)
+
+    /**
+     * v1.5.0: sets the Loop's clock as Polar Flow does: query 3 SET_LOCAL_TIME, then query 1
+     * SET_SYSTEM_TIME, queued back to back on the one-in-flight queue (nothing can go between
+     * them). Flow sends both before INITIALIZE_SESSION; when to send is the app's choice. Explicit
+     * opt-in: nothing in this library ever calls it (source tripwire in OutgoingFrameAllowListTest).
+     * [onResult] gets both answers once the second is in; the Loop answered Flow's with status-0
+     * frames, i.e. PftpResult.Empty.
+     */
+    fun sendPftpSetTime(local: LocalTimeSetting, system: SystemTimeSetting, onResult: (local: PftpResult, system: PftpResult) -> Unit) {
+        var localResult: PftpResult = PftpResult.Cancelled("SET_LOCAL_TIME not answered")
+        request(OutgoingFrame.SetLocalTime(local)) { localResult = it }
+        request(OutgoingFrame.SetSystemTime(system)) { onResult(localResult, it) }
+    }
 
     private fun request(frame: OutgoingFrame, onResult: (PftpResult) -> Unit) =
         queue.request(frame) { result -> deliver(frame, result, onResult) }

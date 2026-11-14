@@ -70,6 +70,11 @@ class PftpDeviceNotificationReader(
                 return null
             }
             body.write(frame, 1, frame.size - 1)
+            if (body.size() > MAX_NOTIFICATION_BYTES) {
+                log("fb005c52 notification $openId over ${MAX_NOTIFICATION_BYTES / 1024} KiB (${body.size()} B), dropped")
+                open = null
+                return null
+            }
         }
         expectedSequence = (header.sequence + 1) and 0x0F
         if (header.status == STATUS_MORE) {
@@ -91,9 +96,15 @@ class PftpDeviceNotificationReader(
         return "; notification $openId (${dropped.size()} B) dropped with it"
     }
 
-    private companion object {
-        const val STATUS_LAST = 1
-        const val STATUS_MORE = 3
+    companion object {
+        /**
+         * v1.5.0: the most a reassembled notification may hold. A connected device that keeps
+         * sending MORE frames could otherwise grow it until the session ends; real messages are tens
+         * of bytes. Past it the open notification is dropped and its later frames find nothing open.
+         */
+        const val MAX_NOTIFICATION_BYTES = 64 * 1024
+        private const val STATUS_LAST = 1
+        private const val STATUS_MORE = 3
     }
 }
 

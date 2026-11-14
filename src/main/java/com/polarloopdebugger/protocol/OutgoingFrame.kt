@@ -29,6 +29,24 @@ sealed class OutgoingFrame(val characteristic: String, private val encoded: Byte
         override fun toString() = target.toString()
     }
 
+    /**
+     * v1.5.0: REMOVE of one day folder in the SDK's form (`/U/0/YYYYMMDD`, no slash), from an
+     * [SdkDayFolder] only, and only when the app asks (PolarGattClient.sendDayFolderRemoval).
+     */
+    class DayFolderRemoval(val folder: SdkDayFolder) : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildDayFolderRemoval(folder)) {
+        override fun toString() = folder.toString()
+    }
+
+    /** v1.5.0: query 3 SET_LOCAL_TIME, only when the app asks (PolarGattClient.sendPftpSetTime). */
+    class SetLocalTime(val setting: LocalTimeSetting) : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildSetLocalTime(setting)) {
+        override fun toString() = setting.toString()
+    }
+
+    /** v1.5.0: query 1 SET_SYSTEM_TIME, only right after [SetLocalTime] (PolarGattClient.sendPftpSetTime). */
+    class SetSystemTime(val setting: SystemTimeSetting) : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildSetSystemTime(setting)) {
+        override fun toString() = setting.toString()
+    }
+
     data object DiskSpaceQuery : OutgoingFrame(PFTP_REQUEST_RESPONSE_UUID, buildDiskSpaceQuery()) {
         override fun toString() = DISK_SPACE_PSEUDO_PATH
     }

@@ -55,6 +55,12 @@ private const val NOTIFICATION_TERMINATE_SESSION = 0x09
 internal const val PFTP_COMMAND_GET = 0x00
 internal const val PFTP_COMMAND_REMOVE = 0x03
 
+// PbPFtpQuery.SET_SYSTEM_TIME = 1 and SET_LOCAL_TIME = 3 (v1.5.0, opt-in only: PftpTimeSetting.kt).
+// Framed like every query: `02 [id] 80` followed by the serialized params, no length field
+// (capture9 records 430 and 433: 3 + 22 B each).
+internal const val QUERY_SET_SYSTEM_TIME = 1
+internal const val QUERY_SET_LOCAL_TIME = 3
+
 // The ONLY PbPFtpQuery id value this app is able to express (pftp_request.proto's
 // PbPFtpQuery.GET_DISK_SPACE = 5). MessageType.QUERY framing (BlePsFtpUtils.kt in the real SDK):
 // byte0 = id & 0xFF, byte1 = ((id shr 8) and 0x7F) or 0x80 -- the 0x80 marker bit is what tells

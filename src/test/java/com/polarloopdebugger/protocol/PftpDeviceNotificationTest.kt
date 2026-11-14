@@ -120,4 +120,27 @@ class PftpDeviceNotificationTest {
         assertNull(PftpDeviceNotificationId.nameOf(6))
         assertEquals("PftpDeviceNotification(6 ?, 0 B)", PftpDeviceNotification(6, ByteArray(0), 0).toString())
     }
+
+    @Test
+    fun `a notification past 64 KiB is dropped, holds no more than the cap, and the next one decodes`() {
+        // MORE frames of 500 B each, sequence 0..15 wrapping: the open notification grows until the cap drops it.
+        val chunk = ByteArray(499) { 0x55 }
+        assertNull(reader.accept(byteArrayOf(0x06, 0x12) + chunk)) // first: MORE, seq 0, id 18
+        var seq = 1
+        var dropped = false
+        for (i in 0 until 200) {
+            val header = (((seq and 0x0F) shl 4) or 0x07).toByte() // MORE, next = 1
+            assertNull(reader.accept(byteArrayOf(header) + chunk))
+            seq++
+            if (logs.any { "over 64 KiB" in it }) { dropped = true; break }
+        }
+        assertTrue("dropped at the cap", dropped)
+        val size = Regex("over 64 KiB \\((\\d+) B\\)").find(logs.single { "over 64 KiB" in it })!!.groupValues[1].toInt()
+        assertTrue("held $size B", size in PftpDeviceNotificationReader.MAX_NOTIFICATION_BYTES + 1..PftpDeviceNotificationReader.MAX_NOTIFICATION_BYTES + chunk.size)
+        // Its later frames find nothing open; a new one-frame message decodes normally.
+        assertNull(reader.accept(byteArrayOf((((seq and 0x0F) shl 4) or 0x03).toByte()) + chunk))
+        val n = frame("02 13 08 01 10 01")!!
+        assertEquals("EXERCISE_STATUS", n.name)
+        assertEquals(64 * 1024, PftpDeviceNotificationReader.MAX_NOTIFICATION_BYTES)
+    }
 }

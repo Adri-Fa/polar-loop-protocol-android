@@ -39,6 +39,49 @@ fun buildGetRequest(path: String): ByteArray = buildOperation(PFTP_COMMAND_GET, 
  */
 fun buildRemoveRequest(target: PftpRemoveTarget): ByteArray = buildOperation(PFTP_COMMAND_REMOVE, target.path)
 
+/**
+ * v1.5.0: REMOVE of one day folder in the SDK's form, `/U/0/YYYYMMDD` (no trailing slash): the
+ * same framing and command as [buildRemoveRequest], from an [SdkDayFolder] only.
+ */
+fun buildDayFolderRemoval(folder: SdkDayFolder): ByteArray = buildOperation(PFTP_COMMAND_REMOVE, folder.path)
+
+/**
+ * v1.5.0: `02 03 80` + PbPFtpSetLocalTimeParams{1: PbDate{1 year, 2 month, 3 day}, 2: PbTime{1 hour,
+ * 2 minute, 3 seconds, 4 millis}, 3: tz_offset}. Every field is written, zeros included, as Polar
+ * Flow does (a field that is 0 still goes out, e.g. `08 00` for hour 0; capture9 record 430: 22 B of params).
+ */
+fun buildSetLocalTime(setting: LocalTimeSetting): ByteArray =
+    query(QUERY_SET_LOCAL_TIME, dateTimeFields(setting.dateTime) + varintField(3, setting.offsetMinutes.toLong()))
+
+/** v1.5.0: `02 01 80` + PbPFtpSetSystemTimeParams{1: PbDate, 2: PbTime (UTC), 3: trusted = 1} (capture9 record 433). */
+fun buildSetSystemTime(setting: SystemTimeSetting): ByteArray =
+    query(QUERY_SET_SYSTEM_TIME, dateTimeFields(setting.utc) + varintField(3, 1))
+
+private fun query(id: Int, params: ByteArray): ByteArray = byteArrayOf(0x02, (id and 0xFF).toByte(), ((id shr 8) or 0x80).toByte()) + params
+
+private fun dateTimeFields(t: java.time.LocalDateTime): ByteArray {
+    val date = varintField(1, t.year.toLong()) + varintField(2, t.monthValue.toLong()) + varintField(3, t.dayOfMonth.toLong())
+    val time = varintField(1, t.hour.toLong()) + varintField(2, t.minute.toLong()) + varintField(3, t.second.toLong()) +
+        varintField(4, (t.nano / 1_000_000).toLong())
+    return lengthField(1, date) + lengthField(2, time)
+}
+
+private fun varintField(field: Int, value: Long): ByteArray = byteArrayOf((field shl 3).toByte()) + encodeVarint64(value)
+
+private fun lengthField(field: Int, body: ByteArray): ByteArray = byteArrayOf(((field shl 3) or 2).toByte()) + encodeVarint(body.size) + body
+
+/** Protobuf varint of an int64; a negative int32 (a western offset) takes ten bytes, as protobuf writes it. */
+private fun encodeVarint64(value: Long): ByteArray {
+    val out = ArrayList<Byte>(10)
+    var v = value
+    while (v and 0x7FL.inv() != 0L) {
+        out.add(((v and 0x7F) or 0x80).toByte())
+        v = v ushr 7
+    }
+    out.add(v.toByte())
+    return out.toByteArray()
+}
+
 private fun buildOperation(command: Int, path: String): ByteArray {
     val pathBytes = path.toByteArray(Charsets.UTF_8)
     // Serialized PbPFtpOperation{command, path}: field 1 tag+value (08 cc), field 2 tag+length-
